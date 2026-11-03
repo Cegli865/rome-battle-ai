@@ -73,6 +73,8 @@ To **wersja w budowie**. Zmienia się z dnia na dzień i sporo rzeczy jest jeszc
   normalnie, ze swoim AI.
 - AI jest tak dobre, jak model, którego używa, a każdy plan zajmuje kilka sekund. Czasem podejmie dziwne
   decyzje. To część zabawy, a logi z takich bitew bardzo się przydają (patrz *Współtworzenie*).
+- **Nie kupuj tokenów API ani subskrypcji Claude Code specjalnie pod ten mod.** Na tym etapie najpewniej się
+  rozczarujesz.
 
 ### Wymagania
 
@@ -269,6 +271,15 @@ gry, które potrafią go użyć. Generał przejmuje te oddziały, gdy wykonają 
 ---
 
 ## 3. Współtworzenie
+
+To ma być **projekt społeczności**: jedna osoba nie ma czasu, żeby sama pociągnąć go dużo dalej. Jest bardzo
+dużo do poprawy. Harness wciąż nie działa tak, jak powinien - cały czas coś się psuje i całkiem możliwe, że
+trzeba go będzie przepisać od nowa - a reguły i strategię na pewno da się napisać lepiej. Małymi krokami wszystko
+da się dopracować.
+
+**Pracuj nad nim z agentem AI** (Claude Code, Codex czy co tam używasz). Tak powstał cały projekt: odpal
+swojego agenta na repozytorium i logach z bitew i niech on się w tym grzebie. Nikt nie będzie ręcznie przeglądał
+kodu.
 
 Każdy może dołożyć swoją cegiełkę:
 

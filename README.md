@@ -74,6 +74,8 @@ This is **work in progress**. It changes from day to day, and plenty of things a
   normally with its own AI.
 - The AI is only as good as the model behind it, and each plan takes a few seconds. Sometimes it will make odd
   decisions. That is part of the fun, and battle logs of such moments are very welcome (see *Contributing*).
+- **Please don't buy API tokens or a Claude Code subscription just for this mod.** At this stage you would
+  most likely be disappointed.
 
 ### Requirements
 
@@ -269,6 +271,15 @@ which know how to use them. The general takes those units over once their job is
 ---
 
 ## 3. Contributing
+
+This is meant to be a **community project**: one person does not have the time to take it much further alone.
+There is a lot to improve. The harness still does not work as well as it should - something keeps breaking, and
+it is quite possible that the whole harness will need to be rewritten - and the rules and the strategy can
+certainly be written better. Step by step it can all be polished.
+
+**Work on it with an AI coding agent** (Claude Code, Codex or whatever you use). The whole project was built
+that way: point your agent at the repository and the battle logs and let it do the digging. Nobody is going to
+go through the code by hand.
 
 Everyone is welcome:
 
