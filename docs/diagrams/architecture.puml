@@ -1,0 +1,33 @@
+@startuml architecture
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName Sans
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam ArrowColor #555555
+skinparam rectangle {
+  BorderColor #555555
+  RoundCorner 8
+}
+
+rectangle "Total War: ROME REMASTERED (game process)" as game #FDF6E3 {
+  rectangle "Game engine\nbattle loop, units, orders,\nstreets, walls, bridges, fords" as engine #FFFFFF
+  rectangle "Hook (librome_ai.so)\nloaded with LD_PRELOAD" as hook #FFE8C2
+}
+
+rectangle "Python server (rome_ai)" as server #EAF2FB {
+  rectangle "Battle state\n+ observation builder\n(describe.py, town_graph.py)" as obs #FFFFFF
+  rectangle "Commander\n(general.py)\nasks the LLM for a plan" as general #FFFFFF
+  rectangle "Executor\n(executor.py)\nplan -> unit orders\n+ reflexes every 0.5 s" as executor #FFFFFF
+  file "rules.md + strategy.md\ngame rules, tactical advice" as rules #FFFFFF
+}
+
+cloud "LLM\nClaude / OpenAI-compatible /\nDeepSeek / local (Ollama)" as llm #F3E8FB
+
+engine <-down-> hook : "reads memory,\ncalls the game's own\norder functions"
+hook -right-> obs : "state every 0.5 s\n(JSON over TCP :7777)"
+obs -down-> general : "battle report"
+rules -right-> general
+general <-right-> llm : "battle report ->\n<- plan (structured JSON)\nevery ~8 s (~4 s in contact)"
+general -down-> executor : "plan"
+executor -left-> hook : "orders\n(move, attack, formation,\nability, withdraw...)"
+@enduml

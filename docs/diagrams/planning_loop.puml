@@ -1,0 +1,27 @@
+@startuml planning_loop
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName Sans
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+
+participant "Game\n(engine)" as G
+participant "Hook\n(C)" as H
+participant "Executor\n(Python)" as E
+participant "Commander\n(Python)" as C
+participant "LLM" as L
+
+== Battle start ==
+H -> C : battle_start, terrain, town streets / walls,\nbridges and fords
+C -> L : briefing: map, river, unit types,\nrules.md, strategy.md
+== Every 0.5 s (no model call) ==
+G -> H : game tick
+H -> E : state (units, morale, targets, orders...)
+E -> E : reflexes: keep range, engage,\nnew target, abilities, guards
+E -> H : orders
+H -> G : game's own order functions
+== Every ~8 s (~4 s within 200 m of the enemy), when something changed ==
+E -> C : latest state
+C -> L : battle report + previous plan
+L --> C : new plan (groups, tasks, routes,\nformations, reflex settings)
+C -> E : plan
+@enduml

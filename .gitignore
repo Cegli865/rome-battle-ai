@@ -1,0 +1,19 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# hook build output and runtime files
+hook/*.so
+hook/*.so.tmp
+hook/hook.log
+hook/probe/
+hook/PROBE
+
+# battle logs (local, can be attached to issues)
+logs/
+
+# never commit files from the game itself
+*.exe
+*.pack
+.idea/

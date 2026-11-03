@@ -1,0 +1,4 @@
+anthropic>=2.1
+openai>=3.37
+pydantic>=2.14
+numpy>=2.0
