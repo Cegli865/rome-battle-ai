@@ -112,7 +112,8 @@ def describe_type(name: str) -> str | None:
     if len(men) >= 3:
         out.append(f"morale {men[0]} {men[1]} discipline, {men[2]}")
     form = _nums(u.get("formation", ""))
-    extra = [f for f in form[5:] if f and f != "square"]
+    # testudo is switched off for now (executor.TESTUDO_ENABLED): the general is not told about it
+    extra = [f for f in form[5:] if f and f != "square" and f != "testudo"]
     if extra:
         out.append("formations: " + ", ".join(extra))
     attrs = [ATTRIBUTES[a] for a in _nums(u.get("attributes", "")) if a in ATTRIBUTES]

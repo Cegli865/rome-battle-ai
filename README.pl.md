@@ -226,7 +226,23 @@ Hook nie podejmuje decyzji taktycznych. Jest tylko mostem do gry.
     szarży wykonawca wyłącza im tryb harcowania, a potem włącza go z powrotem;
   - umiejętności we właściwym momencie (np. okrzyk bojowy dopiero, gdy wróg jest 40 m od oddziału);
   - zabezpieczenia (artyleria nigdy nie strzela nad własnym sprzętem oblężniczym, a ataki na własne albo
-    nieobecne oddziały są przekierowywane).
+    nieobecne oddziały są przekierowywane);
+  - **rozkazy warunkowe**, które dowódca ustawia w planie: „gdy między *tymi moimi oddziałami* a *tymi
+    oddziałami wroga* stanie się *zdarzenie*, przełącz grupę na *rozkaz*” - np. włócznicy uderzają na to, co
+    schodzi z mostu, łucznicy cofają się, gdy wroga konnica podejdzie na 80 m, rezerwa uderza w tył tego, kto
+    zwiąże centrum. Dowódca może do tego nazywać grupy oddziałów obu stron („wroga konnica”, „prawe skrzydło”).
+
+### Przewidywania: działanie, zanim coś się stanie
+
+Bieżące rozkazy wroga też są czytane z gry (dokąd idzie każdy oddział, kogo atakuje, marszem czy biegiem).
+Oddział wroga bez rozkazu (stanął albo doszedł tam, dokąd go wysłano) według predykcji trzyma kurs z ostatnich 10 s,
+przy czym ostatnie sekundy liczą się najbardziej. Dlatego każdy raport ma sekcję **PREDICTED**: jeśli każdy oddział trzyma się swojego rozkazu, kto na kogo wpadnie
+w najbliższych sekundach i z której strony (front, flanka, tył), kto wejdzie w zasięg strzału, które oddziały wroga
+idą obok albo za linię, gdzie ruszające się oddziały wroga będą za 2, 5 i 10 s, kto z naszych pierwszy zdąży
+w zagrożone miejsce, komu skończy się amunicja albo kto się zmęczy, kto szybko traci ludzi albo może się załamać.
+W mieście ruch idzie ulicami. Dowódca ustawia na tej podstawie rozkazy warunkowe z wyprzedzeniem. Walka i morale nie
+są przewidywane. Serwer sprawdza każde przewidywanie 5 i 10 s później i zapisuje w logu bitwy, na ile się sprawdziło
+(`prediction_check`).
 
 ### Odruchy oszczędzają tokeny
 

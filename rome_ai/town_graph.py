@@ -547,8 +547,43 @@ def place_on_graph(g: TownGraph, x: float, y: float):
     return ("street", na.id, nb.id, t * ln, (1 - t) * ln)
 
 
-def unit_positions(g: TownGraph, units, buildings: dict, own: bool, attacker: bool = False) -> list[str]:
-    """Where each unit is on the graph; for own units also the walking distance and time to the square."""
+TOWARDS_DEG = 45.0  # a direction within this of the way to a node counts as "towards" that node
+MOVING_MPS = 0.7  # slower than this counts as standing (as in describe.py)
+
+
+def _angle(dx: float, dy: float) -> float:
+    return math.degrees(math.atan2(dx, dy)) % 360
+
+
+def _towards(ang: float, ways: list[tuple[str, float]]) -> str | None:
+    """The node whose way (direction of the street leading to it) is closest to ang, within TOWARDS_DEG."""
+    best = None
+    for nid, way in ways:
+        diff = abs((way - ang + 180) % 360 - 180)
+        if diff <= TOWARDS_DEG and (best is None or diff < best[0]):
+            best = (diff, nid)
+    return best[1] if best else None
+
+
+def _graph_heading(u, ways: list[tuple[str, float]], velocity, off: str) -> str:
+    """Facing and movement of a unit in graph terms: towards which node along its street, or neither."""
+    parts = []
+    if velocity is not None and math.hypot(*velocity) >= MOVING_MPS:
+        to = _towards(_angle(*velocity), ways)
+        parts.append((f"moving towards {to}" if to else f"moving {off}") + f" at {math.hypot(*velocity):.0f}m/s")
+    to = _towards(u.heading % 360, ways)
+    parts.append(f"facing {to}" if to else f"facing {off}")
+    return " - " + ", ".join(parts)
+
+
+def unit_positions(g: TownGraph, units, buildings: dict, own: bool, attacker: bool = False,
+                   velocity: dict | None = None) -> list[str]:
+    """Where each unit is on the graph and which way it faces / moves along it; for own units also the walking
+    distance and time to the square."""
+    nbrs = defaultdict(list)
+    for e in g.edges:
+        nbrs[e.a].append(e.b)
+        nbrs[e.b].append(e.a)
     plaza = next((n.id for n in g.nodes.values() if n.kind == "plaza"), None)
     closed = closed_gates(g, buildings, units[0].alliance if units else None) if attacker else set()
     towers_alive = [n for n in g.nodes.values() if (n.kind == "tower" or (n.kind == "gate" and n.level == "wall"))
@@ -565,9 +600,15 @@ def unit_positions(g: TownGraph, units, buildings: dict, own: bool, attacker: bo
             n, d = (g.nodes[a], da) if da <= db else (g.nodes[b], db)
             ends = [(a, da), (b, db)]
             where = f"#{u.id} on the street {a}-{b}, {da:.0f}m from {a}, {db:.0f}m from {b}"
+            na, nb = g.nodes[a], g.nodes[b]
+            ab = _angle(nb.x - na.x, nb.y - na.y)  # the street's own direction, not the unit's offset from it
+            where += _graph_heading(u, [(b, ab), (a, (ab + 180) % 360)], (velocity or {}).get(u.id), "across the street")
         elif pl is not None:
             n, d = g.nodes[pl[1]], pl[3]
             where = f"#{u.id} at {n.id}"
+            if nbrs.get(n.id):
+                ways = [(k, _angle(g.nodes[k].x - n.x, g.nodes[k].y - n.y)) for k in nbrs[n.id]]
+                where += _graph_heading(u, ways, (velocity or {}).get(u.id), "along none of its streets")
         else:
             n = min(g.nodes.values(), key=lambda n: math.dist((n.x, n.y), (u.x, u.y)))
             d = math.dist((n.x, n.y), (u.x, u.y))

@@ -16,9 +16,10 @@ group that breaks one.
 - Artillery (catapults, onagers, ballistas) is inaccurate and its shots hit everyone where they land, your own men too.
 - An artillery unit whose machines are gone (the unit list shows "0 machines - ALL DESTROYED") is harmless: there is no need to kill its crew.
 - Elephants and chariots can run amok and then trample their own side. Shooting at elephants, especially with flaming arrows or flaming ammunition, can quickly drive them into such a frenzy.
-- A unit in phalanx, testudo or schiltrom formation cannot run.
+- A unit in phalanx or schiltrom formation cannot run.
 - Fatigue: running tires units, and tired or exhausted units fight worse and break and flee sooner. The "tired" / "exhausted" marks on your units show it; units recover when they rest.
 - task=withdraw takes a unit off the battlefield only if the briefing says WITHDRAWAL IS POSSIBLE. A unit with keep_range_m backs off from every enemy that comes near, for as long as it is set.
 - Units that "hide in forest" / "hide well in forest" / "hide in long grass" / "hide anywhere" (see UNIT TYPES) are invisible to the enemy while they stand still in that terrain (forest on the TERRAIN MAP). A hidden unit that moves or shoots gives itself away.
 - Give every unit a task in every plan. Units left out of the plan stand still and do nothing.
 - Hard rule for the general: whenever any enemy unit is within 200 m of the general, every order you give the general's unit has run=true - no exceptions, even for a short move inside your own formation. A walking general is caught by enemy cavalry.
+- Hard rule for every plan: every group - also a group of a single unit - gets its look-ahead (lookahead) for 2, 5 and 10 seconds: for each, what you expect that group to face or do by then (from the PREDICTED section and your own reading of the battle), and the reflex that answers it the moment it happens, or null when nothing needs answering. Your next plan comes only every few seconds; the look-ahead is how your army reacts in between.

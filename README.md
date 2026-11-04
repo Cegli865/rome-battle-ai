@@ -227,7 +227,23 @@ The hook takes no tactical decisions. It is only the bridge to the game.
     skirmish mode is switched off for the charge and back on afterwards;
   - abilities at the right moment (e.g. a warcry only when the enemy is within 40 m);
   - safety guards (artillery never fires over its own siege equipment, attacks on own or absent units are
-    redirected).
+    redirected);
+  - **conditional orders** the commander sets in the plan: "when *event* happens between *these of my units* and
+    *those enemy units*, switch the group to *order*" - e.g. spearmen charge what comes off the bridge, archers
+    fall back when enemy cavalry comes within 80 m, a reserve hits the rear of whoever engages the centre. The
+    commander can name groups of units of either side for them ("enemy cavalry", "right flank").
+
+### Predictions: acting before things happen
+
+The enemy's current orders are read from the game too (where each unit is going, whom it attacks, at a walk or
+a run); an enemy unit with no order left (it stopped or got where it was sent) is assumed to keep its course of
+the last 10 s, the recent seconds counting most. So every report has a **PREDICTED** section: if every unit keeps its order, who reaches whom in the next
+seconds and into which side (front, flank, rear), who comes into missile range, which enemy units head beside or
+behind the line, where the moving enemy units will be in 2, 5 and 10 s, who of ours can get to a threatened spot
+first, who runs out of ammunition or tires, and who is losing men fast or at risk of breaking. In towns the
+movement follows the streets. The commander uses it to set conditional orders in advance. Fights and morale are
+not predicted. The server checks every prediction 5 and 10 s later and logs how well it came true
+(`prediction_check` in the battle log).
 
 ### Reflexes save tokens
 

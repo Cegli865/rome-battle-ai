@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 
-from .geometry import SURROUNDED_M, alive, centroid, compass, dist, nearest, surrounded
+from .geometry import SURROUNDED_M, alive, bearing, centroid, compass, dist, nearest, surrounded
 from .protocol import BattleStart, State, Unit
 
 
@@ -70,7 +70,7 @@ def _cond(u: Unit, lost: int = 0, nearest_foe_m: float = 1e9, stuck: bool = Fals
     elif u.ability_on:
         # the game does not let a unit in phalanx / testudo / schiltrom run (UNIT vfunc 0x200)
         parts.append(f"{what.upper()} ON" + (" (cannot run)" if u.ability in (1, 2, 17) else ""))
-    elif u.ability_ready:
+    elif u.ability_ready and u.ability != 1:  # testudo is switched off for now (executor.TESTUDO_ENABLED)
         parts.append(f"{what} ready")
     elif u.ability:
         parts.append(f"{what} not ready")
@@ -88,9 +88,9 @@ def _cond(u: Unit, lost: int = 0, nearest_foe_m: float = 1e9, stuck: bool = Fals
     if u.action != "idle":
         parts.append(u.action + (f">#{u.target}" if u.target is not None else ""))
     if velocity is not None and math.hypot(*velocity) >= MOVING_MPS:
-        word = "" if u.action in ("moving", "running") else "going "  # "moving S 4m/s", "melee going E 3m/s"
-        parts.append(f"{word}{compass(*velocity)} {math.hypot(*velocity):.0f}m/s")
-    parts.append(f"facing {compass(math.sin(math.radians(u.heading)), math.cos(math.radians(u.heading)))}")
+        word = "" if u.action in ("moving", "running") else "going "  # "moving 173° 4m/s", "melee going 90° 3m/s"
+        parts.append(f"{word}{bearing(*velocity)}° {math.hypot(*velocity):.0f}m/s")
+    parts.append(f"facing {round(u.heading) % 360}°")
     if goal is not None:
         parts.append(f"going to ({goal[0]:.0f},{goal[1]:.0f}), {((goal[0] - u.x) ** 2 + (goal[1] - u.y) ** 2) ** 0.5:.0f}m left")
     if stuck:
@@ -176,7 +176,10 @@ UNIT_LEGEND = (
     "range = the reach of the unit's missile weapon and how many enemies are within it (OUT OF RANGE = none). "
     "ORDERED TO = where the unit has been ordered to go (for enemy units: the enemy player's own order - where "
     "he is sending it, at a walk or a RUN), distance and direction from the unit. "
-    "kind: inf/cav/msl(missile)/art(artillery)/GENERAL, spear/hvy/lgt/skrm."
+    "kind: inf/cav/msl(missile)/art(artillery)/GENERAL, spear/hvy/lgt/skrm. "
+    "facing D° = where the unit's front faces; moving / running / going D° Nm/s = the direction it is actually "
+    "moving in and its speed (it can differ from facing, e.g. a unit backing away). Degrees: 0 = north, 90 = east, "
+    "180 = south, 270 = west, clockwise - the same as facing_deg in your plan."
 )
 
 
@@ -373,9 +376,10 @@ def describe(start: BattleStart, state: State, terrain=None, static: bool = True
     mx, my = centroid(mine_alive)
     ex, ey = centroid(theirs_alive)
     role = (
-        "YOU ARE THE DEFENDER: when the time runs out you win, if your army is still standing."
+        "YOU ARE THE DEFENDER - but battles are almost never decided by the time limit: win the fight, and "
+        "answer every move the enemy makes."
         if start.player_is_attacker
-        else "YOU ARE THE ATTACKER: when the time runs out you lose."
+        else "YOU ARE THE ATTACKER: you have to beat his army - waiting gains you nothing."
     )
     if start.battle_type == BATTLE_SUCCESSFUL_AMBUSH:
         # the game's attacker flag names the army that marched on the campaign map, i.e. the one that got ambushed
@@ -412,13 +416,26 @@ def describe(start: BattleStart, state: State, terrain=None, static: bool = True
         lines.append("  out of action: " + ", ".join(f"#{u.id} {u.name} ({u.action})" for u in gone))
     lines += _off_field(state, start.ai_alliance, False)
     lines += crossings_now(start, state)
+    from .predict import predictions
+
+    pred = predictions(start, state)
+    lines += pred
+    lines += state.reflex_status
+    threat = any(w in line for line in pred for w in ("FLANK", "REAR", "BEHIND YOUR LINE"))
+    if threat and not any("waiting for" in line for line in state.reflex_status):
+        lines.append("NO REFLEX IS WAITING for the threats PREDICTED above: without one, your army answers them only "
+                     "in your next plan, seconds too late. Give the groups that should answer them reflexes now "
+                     "(e.g. a reserve that attacks the enemy who engages your line, units that turn or fall back "
+                     "when enemy cavalry comes near).")
     from . import town_graph
 
     g = start.town_graph
     if g is not None:
         lines.append("ON THE TOWN GRAPH - yours: " + "; ".join(
-            town_graph.unit_positions(g, mine_alive, start.buildings, True, attacker=not start.player_is_attacker)))
-        lines.append("ON THE TOWN GRAPH - enemy: " + "; ".join(town_graph.unit_positions(g, theirs_alive, start.buildings, False)))
+            town_graph.unit_positions(g, mine_alive, start.buildings, True, attacker=not start.player_is_attacker,
+                                     velocity=state.velocity)))
+        lines.append("ON THE TOWN GRAPH - enemy: " + "; ".join(
+            town_graph.unit_positions(g, theirs_alive, start.buildings, False, velocity=state.velocity)))
         lines.append(town_graph.status(g, start.buildings, start.ai_alliance))
         if not start.player_is_attacker:  # we attack the town
             routes = town_graph.entrance_routes(g, start.buildings, start.ai_alliance)

@@ -30,6 +30,11 @@ def unit_vec(dx: float, dy: float) -> tuple[float, float]:
     return dx / n, dy / n
 
 
+def bearing(dx: float, dy: float) -> int:
+    """Direction in whole degrees: 0 = north (+y), 90 = east, clockwise - the same convention as facing_deg."""
+    return round(math.degrees(math.atan2(dx, dy))) % 360
+
+
 def compass(dx: float, dy: float) -> str:
     """8-way compass word for a direction (y = north)."""
     if math.hypot(dx, dy) < 1e-6:

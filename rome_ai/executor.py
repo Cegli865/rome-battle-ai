@@ -8,6 +8,8 @@ can re-plan:
   on_target_lost  "nearest": a new target when the old one dies or routs
   engage_within_m attack enemies that come this close to the unit's place, then go back
   keep_range_m    missile units back off from enemies closer than this
+and the plan's conditional orders (GroupOrder.reflexes, see reflexes.py): when an event happens, the group
+switches to another order until the next plan.
 """
 
 from __future__ import annotations
@@ -26,6 +28,11 @@ ARRIVED_M = 12.0
 RESEND_AFTER = 8.0  # s; re-issue an unchanged order only to a unit that has stood idle this long without doing it
 # formations that are special-ability toggles in this game -> the unit's special ability type (hook "ability")
 TOGGLE_FORMATIONS = {"phalanx": 2, "testudo": 1}
+# Testudo is switched off for now (2026-11-05): the general put it on at the wrong moments (to march, or as a reflex
+# just before a melee) and units then stood idle in it. The general is not told about it, no order switches it on,
+# and a unit found with it on gets it switched off. Set True to bring it back (and undo the prompt changes).
+TESTUDO_ENABLED = False
+TESTUDO = 1  # its special ability type
 ARTILLERY_RANGE_M = 300.0
 FRIENDLY_FIRE_M = 30.0  # a target whose line of fire passes this close to our own siege equipment is not shot at
 FLANK_STANDOFF_M = 45.0  # attack_from: point this far from the target on the chosen side, reached before charging
@@ -46,7 +53,10 @@ class Executor:
         self.dropped: dict[int, float] = {}  # unit -> battle time a drop_engine was last sent
         self.rally_sent: dict[int, float] = {}  # general -> battle time rally was last toggled
         self.ability_sent: dict[int, float] = {}  # unit -> battle time its special ability was last ordered
-        self.new_plan(Plan(intent="", groups=[]))
+        from .reflexes import ReflexEngine
+
+        self.reflexes = ReflexEngine(start)
+        self.new_plan(Plan(intent="", note="", groups=[]))
 
     def new_plan(self, plan: Plan) -> None:
         self.slots: dict[int, tuple[float, float]] = {}  # unit -> final position in its group's shape
@@ -56,6 +66,15 @@ class Executor:
         self.targets: dict[int, int] = {}  # unit -> enemy it attacks (may differ from the plan's after on_target_lost)
         self.flanked: set[int] = set()  # units that reached their attack_from side and now charge
         self.homes: dict[int, tuple[float, float]] = {}  # halt + engage_within_m: where the unit stood
+        self.reflexes.new_plan(plan)
+
+    def _forget(self, ids: set[int]) -> None:
+        """Units whose group switched to a reflex order: lay them out and target afresh."""
+        for d in (self.slots, self.facings, self.paths, self.targets, self.homes):
+            for i in ids:
+                d.pop(i, None)
+        self.final_sent -= ids
+        self.flanked -= ids
 
     # --- main ---------------------------------------------------------------
 
@@ -64,7 +83,10 @@ class Executor:
         by_id = {u.id: u for u in state.units}
         self.foes = [u for u in state.units if u.alliance != ai and u.action not in ("dead", "routing") and u.soldiers > 0]
         out: list[Order] = []
-        for g in plan.groups if plan else []:
+        groups, changed = self.reflexes.effective(state, plan, self.slots)
+        if changed:
+            self._forget(changed)
+        for g in groups:
             # units the game's AI has while they use their siege equipment take no orders from us
             units = [by_id[i] for i in g.unit_ids if i in by_id and by_id[i].alliance == ai
                      and by_id[i].action not in ("dead", "routing") and not by_id[i].game_ai]
@@ -74,7 +96,11 @@ class Executor:
                 out += self._modes(u, g, state.t)
                 near = g.ability_enemy_within_m is None or any(
                     dist(u, f) < g.ability_enemy_within_m for f in self.foes)
-                if ((g.use_ability is True and u.ability_ready and not u.ability_on and near)
+                if not TESTUDO_ENABLED and u.ability == TESTUDO:
+                    if u.ability_on and state.t - self.ability_sent.get(u.id, -1e9) > RESEND_AFTER:
+                        self.ability_sent[u.id] = state.t
+                        out.append(SpecialAbility(unit=u.id))  # switch it off
+                elif ((g.use_ability is True and u.ability_ready and not u.ability_on and near)
                         or (g.use_ability is False and u.ability_on)) \
                         and state.t - self.ability_sent.get(u.id, -1e9) > RESEND_AFTER:
                     self.ability_sent[u.id] = state.t
@@ -364,7 +390,9 @@ class Executor:
     def _modes(self, u: Unit, g: GroupOrder, now: float = 0.0) -> list[Order]:
         out: list[Order] = []
         toggle = TOGGLE_FORMATIONS.get(g.formation or "")
-        if toggle is not None and u.ability == toggle:
+        if not TESTUDO_ENABLED and g.formation == "testudo":
+            pass  # switched off for now (an active one is switched off in tick)
+        elif toggle is not None and u.ability == toggle:
             # phalanx / testudo are special-ability toggles in this game: a formation order does not switch them on
             if not u.ability_on and u.ability_ready and now - self.ability_sent.get(u.id, -1e9) > RESEND_AFTER:
                 self.ability_sent[u.id] = now

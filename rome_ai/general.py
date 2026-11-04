@@ -19,7 +19,10 @@ from typing import Protocol
 
 from .describe import describe
 from .geometry import alive, centroid, dist, nearest
-from .plan import GroupOrder, Plan
+from .plan import GroupOrder, Lookahead, Plan
+
+# the rule-based general does not look ahead: the required look-ahead entries say so
+NO_LOOKAHEAD = [Lookahead(in_s=t, expect="(rule-based general: no look-ahead)") for t in (2, 5, 10)]
 from .protocol import BattleStart, State
 
 log = logging.getLogger(__name__)
@@ -76,13 +79,40 @@ Reflexes (per group, react between your plans):
   works for every unit - missile units, and also the general: with keep_range_m he backs off from cavalry \
   charging him (watch TARGETED BY on his line) without waiting for your next plan.
 Per group also: run (true only for charges and urgent moves; running tires units), formation (phalanx, \
-testudo, wedge, schiltrom, shield_wall, square, horde - only for unit types that have it), fire_at_will and \
+wedge, schiltrom, shield_wall, square, horde - only for unit types that have it), fire_at_will and \
 skirmish for missile units, use_ability (true: units use / switch on their special ability - warcry, druid chant, screeching women, \
 cantabrian circle, flaming ammunition - when it is ready, or only once an enemy is closer than \
 ability_enemy_within_m; false: switch a toggled one off; the unit list shows "ability ready" / "ABILITY ON", the UNIT TYPES list says \
 what each ability does), rally (general's unit: RALLY ability on / off - steadies the morale of nearby units), drop_equipment (units carrying a ram / ladders / a siege tower leave it, to move \
 and fight freely), last_resort to mark a group that breaks a GAME RULE because the battle is \
 otherwise lost.
+
+Note (required): end every plan with a short note to yourself - your next plans see your last notes, while \
+the earlier reports are not kept. Write what you would want to remember: the idea you are following, what the \
+enemy keeps doing, what worked or failed.
+Look-ahead (required in every group): three entries, for 2, 5 and 10 s from now - what you expect the group to \
+face or do by then, and the reflex that answers it (null when nothing needs answering). Extra reflexes not tied \
+to a moment go in the group's reflexes list.
+Conditional orders (the reflexes of a group's look-ahead, or its reflexes list) let you act BEFORE things \
+happen instead of waiting for your next plan: "when <event> happens between <ally_target> and <enemy_target>, the group switches to <order>". The \
+executor checks them twice a second; each fires once, and the group keeps the new order until your next plan. \
+Use the PREDICTED section to set them up: if an enemy is predicted to hit a flank in ~10 s, give the reserve a \
+reflex to charge it as soon as it engages.
+- ally_target / enemy_target: {"kind": "self"} (this group), "any", {"kind": "units", "units": [...]}, or \
+  {"kind": "groups", "groups": [...]} - names from unit_groups (named sets of units of EITHER side that you \
+  define in the plan, a unit may be in several, e.g. "enemy cavalry", "right flank") or of this plan's groups.
+- event: near (within_m, at_least), engaged (an ally of ally_target fights an enemy of enemy_target), routed \
+  (side ally / enemy), in_zone (zone: "C1" a river crossing and its exit on your bank, "P" the town square, a \
+  town graph node, or "x,y,r"; at_least), morale_below (value 0..1), arrived (this group reached its place), \
+  after (seconds since this plan), out_of_ammo, predicted_contact (an enemy of enemy_target is predicted to \
+  reach an ally of ally_target within seconds).
+- order: attack (the enemy that set the event off; attack_from, run, melee), move (target_point, facing_deg), \
+  fall_back (distance_m from that enemy), hold, withdraw, ability (on), rally (on), formation.
+Examples: spearmen at a bridge {"event": {"type": "in_zone", "zone": "C1", "at_least": 2}, "order": {"type": \
+"attack"}}; archers {"enemy_target": {"kind": "groups", "groups": ["enemy cavalry"]}, "event": {"type": \
+"near", "within_m": 80}, "order": {"type": "fall_back", "distance_m": 70}}; a cavalry reserve {"ally_target": \
+{"kind": "groups", "groups": ["centre"]}, "event": {"type": "engaged"}, "order": {"type": "attack", \
+"attack_from": "rear"}}. YOUR REFLEXES in each report shows which fired and which still wait.
 
 Coordination is yours too: to hit from several sides at once, first move the groups to their starting \
 points, and only when the unit list shows them there, order the attack in a later plan. To keep a group \
@@ -117,7 +147,14 @@ entering the square by another street. If you need other routes (e.g. around a s
 blocks), ask with route_requests (from a node, to a node or the square, avoiding nodes): they come as \
 REQUESTED ROUTES in the next message.
 
-Taking losses: units marked UNDER FIRE are being shot without fighting back.\
+Taking losses: units marked UNDER FIRE are being shot without fighting back.
+
+PREDICTED: what happens in the next seconds if every unit (yours and the enemy's) keeps its current order - \
+the enemy's current orders are read from the game; an enemy unit with no order left (standing, or arrived \
+where it was sent) is assumed to keep the course of its last 10 s, marked as a guess. Who reaches whom, when and into which side (front, flank, \
+rear), who comes into missile range, enemy units heading beside or behind your line, where the moving enemy \
+units will be in 2, 5 and 10 s, and who is losing men fast. Use it to act before things happen, not after. \
+Fights and morale are not predicted, and the enemy can change his orders at any time.\
 """
 
 
@@ -172,8 +209,12 @@ def _ensure_briefing(start: BattleStart, state: State) -> None:
 def _user_message(start: BattleStart, state: State, previous: Plan | None) -> str:
     _ensure_briefing(start, state)
     msg =describe(start, state, start.terrain, static=start.briefing is None)
+    if start.notes:
+        msg += "\n\nYOUR NOTES TO YOURSELF (from your last plans, oldest first):\n" + "\n".join(
+            f"  {t:.0f}s: {n}" for t, n in start.notes[-NOTES_SHOWN:])
     if previous is not None:
-        msg += "\n\nYOUR CURRENT PLAN:\n" + previous.model_dump_json(indent=None, exclude_defaults=True)
+        msg += "\n\nYOUR CURRENT PLAN:\n" + previous.model_dump_json(indent=None, exclude_defaults=True,
+                                                                     exclude={"note"})
         if start.town_graph is not None and not start.player_is_attacker:
             from .town_graph import approach_summary
 
@@ -259,7 +300,9 @@ def _user_message(start: BattleStart, state: State, previous: Plan | None) -> st
         if rr:
             msg += "\n" + rr
     msg += _artillery_reminder(start, state, previous)
-    msg += "\n\nGive the updated plan."
+    msg += ("\n\nGive the updated plan. Every group that will face a threat PREDICTED above must get at least "
+            "one reflex (the reflexes field of the group) to answer it the moment it happens."
+            if "NO REFLEX IS WAITING" in msg else "\n\nGive the updated plan.")
     return msg
 
 
@@ -312,6 +355,7 @@ def _artillery_reminder(start: BattleStart, state: State, previous: Plan | None)
 class ClaudeGeneral:
     rules = ""
     strategy = ""
+    last_usage: dict | None = None
 
     def __init__(self, model: str = "claude-opus-5-5", effort: str = "low") -> None:
         import anthropic
@@ -335,6 +379,10 @@ class ClaudeGeneral:
         )
         if response.stop_reason == "refusal" or response.parsed_output is None:
             raise RuntimeError(f"no plan (stop_reason={response.stop_reason})")
+        u = response.usage
+        self.last_usage = {"input": u.input_tokens, "cache_read": getattr(u, "cache_read_input_tokens", 0) or 0,
+                           "cache_write": getattr(u, "cache_creation_input_tokens", 0) or 0,
+                           "output": u.output_tokens}
         return response.parsed_output
 
 
@@ -350,6 +398,13 @@ def _find_claude_cli() -> str:
     if bundled:
         return bundled[-1]
     raise SystemExit("claude CLI not found; install Claude Code or pass --claude-bin")
+
+
+# Claude Code keeps one conversation per process: every plan re-reads all the earlier reports and plans. Each
+# report is self-contained (the whole battle state and the current plan), so after this many plans the
+# conversation starts afresh; the fixed system prompt is the same, so it still comes from the prompt cache.
+CONVERSATION_PLANS = 3  # each plan sees at most the 2 previous exchanges
+NOTES_SHOWN = 5  # the general's notes to himself kept in every report: memory beyond the short conversation
 
 
 class ClaudeCodeGeneral:
@@ -371,6 +426,8 @@ class ClaudeCodeGeneral:
         self.proc: asyncio.subprocess.Process | None = None
         self.proc_system: tuple | None = None  # (battle, system prompt) the running process was started for
         self.pending = 0  # messages sent to the process whose answer has not been read yet
+        self.proc_plans = 0  # plans answered by the running process (its conversation length)
+        self.last_usage: dict | None = None  # tokens of the last plan, for the battle log
         self.rate_limit: dict | None = None  # last rate_limit_event info: subscription 5-hour / 7-day usage
 
     def describe(self) -> dict:
@@ -389,7 +446,7 @@ class ClaudeCodeGeneral:
 
     async def close(self) -> None:
         """End the battle's claude process (a new battle starts a new one)."""
-        proc, self.proc, self.proc_system, self.pending = self.proc, None, None, 0
+        proc, self.proc, self.proc_system, self.pending, self.proc_plans = self.proc, None, None, 0, 0
         if proc is not None and proc.returncode is None:
             proc.kill()
             try:
@@ -403,6 +460,9 @@ class ClaudeCodeGeneral:
         _ensure_briefing(start, state)  # before the system prompt, which carries it
         system = system_prompt(self.rules, start.briefing, self.strategy)
         key = (id(start), system)  # a new battle or a changed briefing (e.g. the town graph arrived)
+        if self.proc is not None and self.proc_plans >= CONVERSATION_PLANS:
+            log.info("conversation reached %d plans - starting a fresh one", self.proc_plans)
+            await self.close()
         if self.proc is None or self.proc.returncode is not None or self.proc_system != key:
             # a new battle, or the briefing changed (e.g. the town graph arrived): a new conversation
             await self.close()
@@ -431,6 +491,7 @@ class ClaudeCodeGeneral:
         except (asyncio.TimeoutError, RuntimeError):
             await self.close()  # don't reuse a process in an unknown state
             raise
+        self.proc_plans += 1
         return self._finish(res)
 
     async def _read_result(self) -> dict:
@@ -452,6 +513,9 @@ class ClaudeCodeGeneral:
             raise RuntimeError(f"claude: {res.get('result')}")
         u = res.get("usage") or {}
         tin = u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
+        self.last_usage = {"input": u.get("input_tokens", 0), "cache_read": u.get("cache_read_input_tokens", 0),
+                           "cache_write": u.get("cache_creation_input_tokens", 0), "output": u.get("output_tokens", 0),
+                           "conversation_plans": self.proc_plans, "api_cost_usd": res.get("total_cost_usd")}
         self.plans += 1
         self.tokens_in += tin
         self.tokens_out += u.get("output_tokens", 0)
@@ -571,33 +635,33 @@ class RuleGeneral:
         mine = alive(u for u in state.units if u.alliance == ai)
         foes = alive(u for u in state.units if u.alliance != ai)
         if not mine or not foes:
-            return Plan(intent="nothing to do", groups=[])
+            return Plan(intent="nothing to do", note="", groups=[])
         foe_missiles = [f for f in foes if f.category == "missile"]
         foe_main = [f for f in foes if f.category in ("infantry", "general")] or foes
         groups: list[GroupOrder] = []
         inf = [u for u in mine if u.category in ("infantry", "general")]
         if inf:
             tgt = nearest(_proxy(centroid(inf), inf[0]), foe_main)
-            groups.append(GroupOrder(name="infantry", unit_ids=[u.id for u in inf], task="attack", target_unit=tgt.id))
+            groups.append(GroupOrder(lookahead=NO_LOOKAHEAD, name="infantry", unit_ids=[u.id for u in inf], task="attack", target_unit=tgt.id))
         cav = [u for u in mine if u.category == "cavalry"]
         if cav:
             prey = min(foe_missiles or foe_main, key=lambda f: min(dist(c, f) for c in cav))
             cx, cy = centroid(cav)
             side = 1 if cx >= prey.x else -1  # go round on the side the cavalry already is
-            groups.append(GroupOrder(name="horse", unit_ids=[c.id for c in cav], task="move", run=True,
+            groups.append(GroupOrder(lookahead=NO_LOOKAHEAD, name="horse", unit_ids=[c.id for c in cav], task="move", run=True,
                                      waypoints=[[prey.x + side * 200, prey.y]], target_point=[prey.x, prey.y]))
             if min(dist(c, prey) for c in cav) < 120:
-                groups[-1] = GroupOrder(name="horse", unit_ids=[c.id for c in cav], task="attack", target_unit=prey.id,
+                groups[-1] = GroupOrder(lookahead=NO_LOOKAHEAD, name="horse", unit_ids=[c.id for c in cav], task="attack", target_unit=prey.id,
                                         run=True, attack_from="rear")
         miss = [u for u in mine if u.category == "missile"]
         if miss:
             tgt = nearest(_proxy(centroid(miss), miss[0]), foes)
-            groups.append(GroupOrder(name="archers", unit_ids=[u.id for u in miss], task="attack", target_unit=tgt.id,
+            groups.append(GroupOrder(lookahead=NO_LOOKAHEAD, name="archers", unit_ids=[u.id for u in miss], task="attack", target_unit=tgt.id,
                                      fire_at_will=True, skirmish=True, keep_range_m=60))
         rest = [u for u in mine if u.category in ("siege", "other")]
         if rest:
-            groups.append(GroupOrder(name="rest", unit_ids=[u.id for u in rest], task="halt"))
-        return Plan(intent="pin them with the infantry, cavalry round the flank", groups=groups)
+            groups.append(GroupOrder(lookahead=NO_LOOKAHEAD, name="rest", unit_ids=[u.id for u in rest], task="halt"))
+        return Plan(intent="pin them with the infantry, cavalry round the flank", note="", groups=groups)
 
 
 def _proxy(xy: tuple[float, float], like):

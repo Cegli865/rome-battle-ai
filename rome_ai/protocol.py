@@ -101,6 +101,7 @@ class BattleStart(BaseModel):
     streets: list | None = Field(default=None, exclude=True)  # Streets.instances from the hook
     wall_platforms: list | None = Field(default=None, exclude=True)  # WallsRaw.platforms from the hook
     crossings: list | None = Field(default=None, exclude=True)  # Crossings.links from the hook
+    notes: list = Field(default_factory=list, exclude=True)  # (battle time, the general's note to himself) per plan
     crossing_banks: dict = Field(default_factory=dict, exclude=True)  # crossing index -> (your bank, enemy bank) at the start
     town_graph: object | None = Field(default=None, exclude=True)
     # town graph node of a gate / wall section -> "siege tower #id" etc.: where our own siege equipment went
@@ -111,6 +112,7 @@ class BattleStart(BaseModel):
 class State(BaseModel):
     type: Literal["state"] = "state"
     t: float  # battle time, seconds
+    stage: int = -1  # the game's battle stage (BATTLE +0): 3 = deployment, 4 = the battle runs; -1 unknown
     units: list[Unit]
     # Filled in by the server, not sent by the hook: men lost per unit over the last LOSS_WINDOW seconds.
     recent_losses: dict[int, int] = Field(default_factory=dict, exclude=True)
@@ -120,6 +122,16 @@ class State(BaseModel):
     goals: dict[int, tuple[float, float]] = Field(default_factory=dict, exclude=True)
     # Filled in by the server: average velocity (m/s east, m/s north) over the last few seconds.
     velocity: dict[int, tuple[float, float]] = Field(default_factory=dict, exclude=True)
+    # Filled in by the server: course of each moving enemy unit (m/s east, m/s north) over the last TREND_WINDOW
+    # seconds, recent seconds weighted more; the predictions use it where the unit's order is not known.
+    trend: dict[int, tuple[float, float]] = Field(default_factory=dict, exclude=True)
+    # Filled in by the server: the plan's conditional orders, fired and waiting (lines for the report).
+    reflex_status: list[str] = Field(default_factory=list, exclude=True)
+    # Filled in by the server: remaining waypoints of our units (from the executor), for the predictions.
+    own_paths: dict[int, list[tuple[float, float]]] = Field(default_factory=dict, exclude=True)
+    # Filled in by the server: change per second of ammunition and fatigue (0..1) over the last ~10 s.
+    ammo_rate: dict[int, float] = Field(default_factory=dict, exclude=True)
+    fatigue_rate: dict[int, float] = Field(default_factory=dict, exclude=True)
     # units with men that are not on the battlefield (taken out of `units` by the server), and which of them
     # have left it (withdrawn) rather than not arrived yet
     off_field: list = Field(default_factory=list, exclude=True)
@@ -219,6 +231,14 @@ class Resume(BaseModel):
     type: Literal["resume"] = "resume"
 
 
+class Retaken(BaseModel):
+    """The game's AI had taken one of our units back (reinforcements entering the field) and the hook took it
+    again: whatever the unit is doing now is the game AI's order, so ours has to be sent again."""
+
+    type: Literal["retaken"] = "retaken"
+    unit: int
+
+
 class RawUnit(BaseModel):
     id: int  # (alliance + 1) * 10000 + army * 100 + index
     alliance: int
@@ -236,14 +256,14 @@ class RawState(BaseModel):
     units: list[RawUnit]
 
 
-GameMessage = Annotated[Union[Hello, BattleStart, State, RawState, BattleEnd, Pause, Resume, Log, TerrainMsg, TerrainMasks, Buildings, BuildingStatus, Streets, WallsRaw, PlatformsRaw, Crossings], Field(discriminator="type")]
+GameMessage = Annotated[Union[Hello, BattleStart, State, RawState, BattleEnd, Pause, Resume, Retaken, Log, TerrainMsg, TerrainMasks, Buildings, BuildingStatus, Streets, WallsRaw, PlatformsRaw, Crossings], Field(discriminator="type")]
 
 
 class _GameEnvelope(BaseModel):
     msg: GameMessage
 
 
-def parse_game_message(line: str | bytes) -> Hello | BattleStart | State | RawState | BattleEnd | Pause | Resume | Log | TerrainMsg | TerrainMasks | Buildings | BuildingStatus | Streets | WallsRaw | PlatformsRaw | Crossings:
+def parse_game_message(line: str | bytes) -> Hello | BattleStart | State | RawState | BattleEnd | Pause | Resume | Retaken | Log | TerrainMsg | TerrainMasks | Buildings | BuildingStatus | Streets | WallsRaw | PlatformsRaw | Crossings:
     import json
 
     return _GameEnvelope.model_validate({"msg": json.loads(line)}).msg

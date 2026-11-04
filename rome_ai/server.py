@@ -23,7 +23,7 @@ from pathlib import Path
 from .executor import ARRIVED_M, Executor
 from .general import General, make_general
 from .plan import Plan
-from .protocol import BattleEnd, BattleStart, BuildingStatus, Buildings, Control, Hello, Log, Crossings, Orders, Pause, PlatformsRaw, Streets, WallsRaw, TerrainMasks, TerrainMsg, RawState, Resume, State, dump, parse_game_message
+from .protocol import BattleEnd, BattleStart, BuildingStatus, Buildings, Control, Hello, Log, Crossings, Orders, Pause, PlatformsRaw, Streets, WallsRaw, TerrainMasks, TerrainMsg, RawState, Resume, Retaken, State, dump, parse_game_message
 
 log = logging.getLogger("rome_ai")
 
@@ -38,12 +38,18 @@ LOSS_WINDOW = 15.0  # seconds of history for "recent losses"
 STUCK_AFTER = 12.0  # s with a move order and < STUCK_PROGRESS_M progress -> reported to the general as STUCK
 STUCK_PROGRESS_M = 8.0
 VELOCITY_WINDOW = 5.0  # s of position history used for the "going NE 4m/s" info
+TREND_WINDOW = 10  # s of position history for an enemy unit's course, used where its order is not known
+TREND_MIN_SPEED = 0.3  # m/s; slower than this the unit counts as standing
 REPLAN_LOSSES = 0.08  # a unit under fire losing this share of its men within the window triggers an early plan
 REPLAN_MIN_GAP = 20.0  # s; early plans at most this often (each one costs a model call)
 FAILS_BEFORE_FALLBACK = 2  # consecutive failed plans (usage limit, network...) -> hand the army back to the game's AI
 QUIET_MAX_GAP = 30.0  # s; if nothing changed, still ask the general at least this often
 QUIET_MOVE_M = 60.0  # a unit moving more than this since the last plan counts as a change
 CONTACT_M = 200.0  # any of our units this close to an enemy unit: plan every cycle, every CONTACT_INTERVAL s
+# BATTLE stage before the fighting starts (seen: 2 for the first seconds, 3 or 4 while the player deploys, 5 once
+# he clicks the start of the battle)
+DEPLOYMENT_STAGES = (1, 2, 3, 4)
+PRED_SNAP_EVERY = 5.0  # s of battle time between saved predictions (checked 5 and 10 s later, in the battle log)
 CONTACT_INTERVAL = 4.0  # s between plans (from the start of one to the start of the next) while in contact
 
 
@@ -58,7 +64,9 @@ class BattleSession:
         self.state: State | None = None
         self.plan: Plan | None = None
         self.planner: asyncio.Task | None = None
-        self.history: collections.deque[tuple[float, dict[int, int]]] = collections.deque()
+        self.history: collections.deque = collections.deque()  # (battle time, men, {unit: (ammo, fatigue)})
+        self.pred_snaps: list[dict] = []  # predictions waiting to be checked against what happened
+        self.last_pred_snap = -1e9
         self.replan = asyncio.Event()
         self.battle_log = None
         self.last_plan_at = 0.0
@@ -88,6 +96,8 @@ class BattleSession:
         n_rules = len(rule_lines(self.general.rules).splitlines())
         n_strategy = len(rule_lines(self.general.strategy).splitlines())
         self.history.clear()
+        self.pred_snaps.clear()
+        self.last_pred_snap = -1e9
         LOG_DIR.mkdir(exist_ok=True)
         if self.battle_log:
             self.battle_log.close()
@@ -110,14 +120,27 @@ class BattleSession:
             self.battle_log.flush()
 
     def _track_losses(self, msg: State) -> None:
-        now = time.monotonic()
+        now = msg.t  # battle time: a pause is not a gap in the fighting
+        if self.history and now < self.history[-1][0]:
+            self.history.clear()  # battle time went back: a restarted battle
         counts = {u.id: u.soldiers for u in msg.units}
-        self.history.append((now, counts))
+        self.history.append((now, counts, {u.id: (u.ammo, u.fatigue) for u in msg.units}))
         while self.history and now - self.history[0][0] > LOSS_WINDOW:
             self.history.popleft()
         old = self.history[0][1]
         msg.recent_losses = {i: old[i] - n for i, n in counts.items() if i in old and old[i] > n}
-        if self.start is not None and not self.replan.is_set() and now - self.last_plan_at >= REPLAN_MIN_GAP:
+        # ammunition and fatigue trends over the last ~10 s (for the predictions)
+        past = next((h for h in self.history if now - h[0] <= 10.0), None)
+        if past is not None and now - past[0] >= 3.0:
+            dt = now - past[0]
+            for u in msg.units:
+                a0, f0 = past[2].get(u.id, (None, None))
+                if a0 is not None and u.ammo is not None and a0 > u.ammo:
+                    msg.ammo_rate[u.id] = (a0 - u.ammo) / dt
+                if f0 is not None and u.fatigue > f0:
+                    msg.fatigue_rate[u.id] = (u.fatigue - f0) / dt
+        if (self.start is not None and not self.replan.is_set()
+                and time.monotonic() - self.last_plan_at >= REPLAN_MIN_GAP):
             from .describe import UNDER_FIRE_NO_ENEMY_WITHIN
             from .geometry import alive, dist, nearest
 
@@ -164,6 +187,32 @@ class BattleSession:
             self.start.player_is_attacker = ai_defends
             self._log_event("sides", ai_defends=ai_defends, ai_inside=round(ai_in, 2), enemy_inside=round(foe_in, 2))
 
+    def _track_trend(self, msg: State) -> None:
+        """Course of every enemy unit over the last TREND_WINDOW s: the velocity of each of those seconds, the
+        newest weighted 1.0, the one before 0.9 ... the oldest 0.1, divided by the sum of the weights."""
+        hist = self.positions
+
+        def at(t: float) -> tuple[float, dict] | None:  # the position record closest to battle time t
+            best = min(hist, key=lambda h: abs(h[0] - t))
+            return best if abs(best[0] - t) <= 0.5 else None
+
+        marks = [at(msg.t - s) for s in range(TREND_WINDOW + 1)]  # 0, 1, ... TREND_WINDOW s ago
+        for u in msg.units:
+            if u.alliance == self.start.ai_alliance:
+                continue
+            sx = sy = sw = 0.0
+            for i in range(1, TREND_WINDOW + 1):
+                new, old = marks[i - 1], marks[i]
+                if new is None or old is None or new[0] - old[0] < 0.5 or u.id not in new[1] or u.id not in old[1]:
+                    continue
+                w = (TREND_WINDOW + 1 - i) / TREND_WINDOW
+                dt = new[0] - old[0]
+                sx += w * (new[1][u.id][0] - old[1][u.id][0]) / dt
+                sy += w * (new[1][u.id][1] - old[1][u.id][1]) / dt
+                sw += w
+            if sw >= 1.5 and math.hypot(sx / sw, sy / sw) >= TREND_MIN_SPEED:  # at least ~2 s of history
+                msg.trend[u.id] = (sx / sw, sy / sw)
+
     def _track_stuck(self, msg: State) -> None:
         """Information for the general only: where units with an unfinished move are going, and which of
         them don't get anywhere."""
@@ -181,6 +230,8 @@ class BattleSession:
             for u in msg.units:
                 if u.id in past[1]:
                     msg.velocity[u.id] = ((u.x - past[1][u.id][0]) / dt, (u.y - past[1][u.id][1]) / dt)
+        if self.start is not None:
+            self._track_trend(msg)
         if self.executor is None:
             return
         old = hist[0][1] if now - hist[0][0] >= STUCK_AFTER - 1 else {}
@@ -217,6 +268,12 @@ class BattleSession:
         for u in msg.units:  # the commanding character may lead an ordinary unit; it has the rally ability
             if u.rally >= 0:
                 u.category = "general"
+        if self.state is not None and msg.stage != self.state.stage:
+            log.info("battle stage %d -> %d%s", self.state.stage, msg.stage,
+                     " (deployment: no plans until the battle starts)" if msg.stage in DEPLOYMENT_STAGES else "")
+            self._log_event("stage", t=msg.t, old=self.state.stage, new=msg.stage)
+            if self.state.stage in DEPLOYMENT_STAGES and self.plan is not None:
+                self.replan.set()  # the battle has started: re-plan at once
         self._check_sides(msg)
         self._track_losses(msg)
         self._track_stuck(msg)
@@ -228,10 +285,48 @@ class BattleSession:
         if self.executor is None:
             return
         orders = self.executor.tick(msg, self.plan)
+        msg.reflex_status = self.executor.reflexes.status(self.plan, msg)
+        msg.own_paths = {k: list(v) for k, v in self.executor.paths.items()}
+        self._calibrate(msg)
         if orders:
             self.writer.write(dump(Orders(orders=orders)))
             await self.writer.drain()
             log.debug("t=%.1f sent %d orders", msg.t, len(orders))
+
+    def _calibrate(self, msg: State) -> None:
+        """Every ~5 s: remember what the predictions say, and log how well older ones came true."""
+        from .predict import check, snapshot
+
+        if self.pred_snaps and msg.t < self.pred_snaps[-1]["t"]:
+            self.pred_snaps.clear()  # battle time went back
+        for snap in list(self.pred_snaps):
+            for h in (5.0, 10.0):
+                if h not in snap["checked"] and msg.t >= snap["t"] + h:
+                    snap["checked"].add(h)
+                    res = check(snap, msg, h)
+                    if res:
+                        self._log_event("prediction_check", **res)
+            if len(snap["checked"]) == 2:
+                self.pred_snaps.remove(snap)
+        if msg.t - self.last_pred_snap >= PRED_SNAP_EVERY:
+            self.last_pred_snap = msg.t
+            snap = snapshot(msg, self.start)
+            snap["checked"] = set()
+            self.pred_snaps.append(snap)
+
+    def retaken(self, unit: int) -> None:
+        """The hook took a unit back from the game's AI: send it our order again on the next tick."""
+        log.info("unit #%d was taken back from the game's AI - re-sending its order", unit)
+        self._log_event("retaken", t=self.state.t if self.state else None, unit=unit)
+        if self.executor is not None:
+            self.executor.last.pop(unit, None)
+            self.executor._forget({unit})
+
+    def _deploying(self) -> bool:
+        """The battlefield is shown but the player has not started the battle yet (deployment): no plans then.
+        A safety net in case a stage value means something else: any unit in melee means the battle is on."""
+        s = self.state
+        return s is not None and s.stage in DEPLOYMENT_STAGES and not any(u.action == "melee" for u in s.units)
 
     def _in_contact(self) -> bool:
         """Any of our units within CONTACT_M of a fighting enemy unit."""
@@ -271,6 +366,9 @@ class BattleSession:
             if self.state is None:
                 await asyncio.sleep(0.2)
                 continue
+            if self._deploying():  # deployment: wait for the start of the battle, no model calls
+                await asyncio.sleep(0.5)
+                continue
             why = self._changed_since_plan()
             if why is None:  # nothing happened: keep the current plan, save a model call
                 self.skipped += 1
@@ -309,11 +407,13 @@ class BattleSession:
                     self._log_event("fallback", on=False)
                 self.plan = plan
                 self.executor.new_plan(plan)
+                if plan.note.strip():
+                    self.start.notes.append((self.state.t, plan.note.strip()))
                 if self.start.briefing and self.start.briefing != getattr(self, "_logged_briefing", None):
                     self._logged_briefing = self.start.briefing  # the static part of the report (map, river, town)
                     self._log_event("briefing", text=self.start.briefing)
                 self._log_event("plan", t=self.state.t, prompt=prompt, plan=plan.model_dump(), seconds=round(time.monotonic() - began, 1),
-                                why=why, skipped_before=self.skipped)
+                                why=why, skipped_before=self.skipped, usage=getattr(self.general, "last_usage", None))
                 rl = getattr(self.general, "rate_limit", None)
                 if rl and rl != self.last_rate_limit:  # subscription usage (claude-code backend), for the overlay
                     self.last_rate_limit = rl
@@ -438,6 +538,8 @@ def make_handler(general: General, plan_interval: float):
                     log.info("[hook] %s", msg.msg)
                 elif isinstance(msg, Pause):
                     session.pause()
+                elif isinstance(msg, Retaken):
+                    session.retaken(msg.unit)
                 elif isinstance(msg, Resume):
                     session.resume()
                     writer.write(dump(Control(take=True)))

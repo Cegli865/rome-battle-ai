@@ -605,7 +605,12 @@ static void hand_siege_unit(uintptr_t unit) {
     *(uint32_t *)(unit + OFF_UNIT_CONTROLLER) = CONTROLLER_AI;
 }
 
+static bool g_taken; /* the alliance is ours (take_control): units the game's AI takes back are retaken */
+static uintptr_t g_handed[MAX_UNITS]; /* units handed to the game's AI one by one ("control" with "unit") */
+static int g_nhanded;
+
 static void take_control(bool take) {
+    g_taken = take;
     for (int i = 0; i < g_nunits; i++) {
         unit_ref *u = &g_units[i];
         if (u->alliance != g_ai_alliance) continue;
@@ -628,6 +633,8 @@ static void take_control(bool take) {
 static void battle_begin(void) {
     g_in_battle = true;
     g_nsaved = 0;
+    g_nhanded = 0;
+    g_taken = false;
     g_battle_t0 = now_s();
     const char *env = getenv("ROME_AI_ALLIANCE");
     g_ai_alliance = env ? atoi(env) : detect_ai_alliance();
@@ -1022,6 +1029,26 @@ static void send_building_status(void) {
     if (g_connected) q_push(&g_out, buf); else free(buf);
 }
 
+/* Reinforcements: the game gives a unit entering the field back to its own AI (2026-11-05: army 2 of a sally
+ * battle came on ~30 s in and then followed the game AI's orders instead of ours). Take back every unit of the
+ * alliance that is on the field and not ours, unless it was handed over on purpose (siege equipment, "control"
+ * for one unit), and tell the server so it sends that unit its order again. */
+static void retake_units(void) {
+    if (!g_taken || g_ai_alliance < 0) return;
+    for (int i = 0; i < g_nunits; i++) {
+        unit_ref *u = &g_units[i];
+        if (u->alliance != g_ai_alliance || !unit_on_field(u->ptr) || ram_handed(u->ptr)) continue;
+        uint32_t *c = (uint32_t *)(u->ptr + OFF_UNIT_CONTROLLER);
+        if (*c == CONTROLLER_SCRIPT) continue;
+        int k = 0;
+        while (k < g_nhanded && g_handed[k] != u->ptr) k++;
+        if (k < g_nhanded) continue;
+        logf_("unit %d was under the game's AI again (controller %u) - taken back", u->id, *c);
+        *c = CONTROLLER_SCRIPT;
+        send_line("{\"type\":\"retaken\",\"unit\":%d}\n", u->id);
+    }
+}
+
 static void handle_order(const char *line) {
     mj_obj o;
     if (!mj_parse_flat(line, &o)) return;
@@ -1031,8 +1058,13 @@ static void handle_order(const char *line) {
         if (uid < 0) {
             take_control(mj_bool(&o, "take", true));
         } else if (unit_by_id(uid)) { /* one unit: hand it to the game's AI or take it back */
-            uint32_t *c = (uint32_t *)(unit_by_id(uid)->ptr + OFF_UNIT_CONTROLLER);
+            uintptr_t ptr = unit_by_id(uid)->ptr;
+            uint32_t *c = (uint32_t *)(ptr + OFF_UNIT_CONTROLLER);
             *c = mj_bool(&o, "take", true) ? CONTROLLER_SCRIPT : CONTROLLER_AI;
+            int k = 0;
+            while (k < g_nhanded && g_handed[k] != ptr) k++;
+            if (*c == CONTROLLER_AI && k == g_nhanded && g_nhanded < MAX_UNITS) g_handed[g_nhanded++] = ptr;
+            if (*c == CONTROLLER_SCRIPT && k < g_nhanded) g_handed[k] = g_handed[--g_nhanded];
             logf_("unit %d %s", uid, *c == CONTROLLER_SCRIPT ? "taken" : "handed to the game AI");
         }
         return;
@@ -1078,7 +1110,15 @@ static void send_state(void) {
     /* Each unit entry stays well under 768 bytes. */
     size_t cap = 256 + (size_t)g_nunits * 768, len = 0;
     char *buf = malloc(cap);
-    len += snprintf(buf + len, cap - len, "{\"type\":\"state\",\"t\":%.2f,\"units\":[", now_s() - g_battle_t0);
+    uintptr_t battle_p = rd_ptr(ADDR_BATTLE_PTR);
+    int stage = battle_p ? (int)rd_u32(battle_p + BATTLE_STAGE) : -1;
+    static int last_stage = -2;
+    if (stage != last_stage) {
+        logf_("battle stage %d -> %d", last_stage, stage);
+        last_stage = stage;
+    }
+    len += snprintf(buf + len, cap - len, "{\"type\":\"state\",\"t\":%.2f,\"stage\":%d,\"units\":[",
+                    now_s() - g_battle_t0, stage);
     /* who attacks whom: the handle each unit is known by, then each unit's current attack order */
     /* the handle is 0x14 bytes (UNIT::order_attack copies +0x78..+0x8b): a pointer that may be the same for
        every unit, then the unit's own id - compare all of it */
@@ -1263,6 +1303,7 @@ static void hooked_tick(void *self) {
     if (g_in_battle) rams_update();
     if (t - g_last_state >= 0.5) {
         g_last_state = t;
+        retake_units();
         send_state();
         idmap_note_men();
         static int n_states;

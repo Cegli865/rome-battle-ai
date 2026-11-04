@@ -14,6 +14,10 @@
 #define OFF_ALLIANCE_IN_BATTLE       0x26a0 /* u32 in an alliance: non-zero = has armies in the battle (0x1436de0) */
 #define BATTLE_TYPE_SIEGE            3
 #define ADDR_BATTLE_PTR              0x757cc50UL /* *(void**) -> arg for alliance_get */
+/* BATTLE +0 u32 stage: BATTLE::deployment_start 0x135e3f0 asserts 1 or 2, BATTLE::deployment_advance 0x1354ee0
+ * moves 1/2 -> 3 and 3 -> 4. Seen in battles: 2 for the first seconds, then 3 or 4 while the player deploys
+ * (one battle 2 -> 3 -> 5, another 4 -> 5), 5 once he clicks the button that starts the battle. */
+#define BATTLE_STAGE                 0x0
 #define ADDR_ALLIANCE_GET            0x1358530UL /* BATTLE_ALLIANCE* (void* battle, uint32 idx) */
 
 #define OFF_NUM_ALLIANCES            0x14180
