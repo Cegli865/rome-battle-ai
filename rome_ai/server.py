@@ -63,6 +63,7 @@ class BattleSession:
         self.positions: collections.deque = collections.deque()  # (battle time, {unit: (x, y)}) for STUCK detection
         self.state: State | None = None
         self.plan: Plan | None = None
+        self.plan_since: float | None = None  # battle time the current plan was put into force
         self.planner: asyncio.Task | None = None
         self.history: collections.deque = collections.deque()  # (battle time, men, {unit: (ammo, fatigue)})
         self.pred_snaps: list[dict] = []  # predictions waiting to be checked against what happened
@@ -286,6 +287,7 @@ class BattleSession:
             return
         orders = self.executor.tick(msg, self.plan)
         msg.reflex_status = self.executor.reflexes.status(self.plan, msg)
+        msg.plan_since = self.plan_since
         msg.own_paths = {k: list(v) for k, v in self.executor.paths.items()}
         self._calibrate(msg)
         if orders:
@@ -406,6 +408,9 @@ class BattleSession:
                     log.info("the general answers again - taking the army back from the game's AI")
                     self._log_event("fallback", on=False)
                 self.plan = plan
+                self.plan_since = self.state.t if self.state else None
+                if self.state is not None:  # the next plan may be asked for before a new state comes in
+                    self.state.plan_since = self.plan_since
                 self.executor.new_plan(plan)
                 if plan.note.strip():
                     self.start.notes.append((self.state.t, plan.note.strip()))

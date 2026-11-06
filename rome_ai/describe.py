@@ -69,7 +69,9 @@ def _cond(u: Unit, lost: int = 0, nearest_foe_m: float = 1e9, stuck: bool = Fals
             parts.append(effect)
     elif u.ability_on:
         # the game does not let a unit in phalanx / testudo / schiltrom run (UNIT vfunc 0x200)
-        parts.append(f"{what.upper()} ON" + (" (cannot run)" if u.ability in (1, 2, 17) else ""))
+        parts.append(f"{what.upper()} ON" + (" (cannot run)" if u.ability == 1 else ""))
+    elif u.ability in (2, 17):
+        parts.append(f"{what} off")  # phalanx / schiltrom: the executor switches it (off while running)
     elif u.ability_ready and u.ability != 1:  # testudo is switched off for now (executor.TESTUDO_ENABLED)
         parts.append(f"{what} ready")
     elif u.ability:

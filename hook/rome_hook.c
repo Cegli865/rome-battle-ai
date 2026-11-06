@@ -1254,12 +1254,15 @@ static tick_fn g_orig_tick;
 static void hooked_tick(void *self) {
     g_orig_tick(self);
 
-    double t = now_s();
+    double t = now_s(), last = g_last_tick;
     g_last_tick = t;
     if (g_ticks_stopped) { /* came back after a pause/menu or a new battle */
         g_ticks_stopped = false;
         enumerate_units();
         if (same_battle()) {
+            /* battle time stands still while the game is paused: shift its start by the pause (2026-11-06: a 30 s
+             * pause counted as battle time made units look stuck for 50 s) */
+            g_battle_t0 += t - last;
             send_line("{\"type\":\"resume\"}\n"); /* same battle resumed */
         } else {
             g_in_battle = false; /* old battle is gone: don't restore controllers on freed units */

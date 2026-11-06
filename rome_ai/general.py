@@ -78,8 +78,10 @@ Reflexes (per group, react between your plans):
   that distance (e.g. 60-80), then carries on. This is our own reflex, not the game's skirmish mode, so it \
   works for every unit - missile units, and also the general: with keep_range_m he backs off from cavalry \
   charging him (watch TARGETED BY on his line) without waiting for your next plan.
-Per group also: run (true only for charges and urgent moves; running tires units), formation (phalanx, \
-wedge, schiltrom, shield_wall, square, horde - only for unit types that have it), fire_at_will and \
+Per group also: run (true only for charges and urgent moves; running tires units), formation (wedge, \
+shield_wall, square, horde - only for unit types that have it; phalanx and schiltrom are handled for you, see \
+the rules), charge_without_phalanx (attack: phalanx units charge at a run all the way and fight without \
+it), fire_at_will and \
 skirmish for missile units, use_ability (true: units use / switch on their special ability - warcry, druid chant, screeching women, \
 cantabrian circle, flaming ammunition - when it is ready, or only once an enemy is closer than \
 ability_enemy_within_m; false: switch a toggled one off; the unit list shows "ability ready" / "ABILITY ON", the UNIT TYPES list says \
@@ -213,7 +215,10 @@ def _user_message(start: BattleStart, state: State, previous: Plan | None) -> st
         msg += "\n\nYOUR NOTES TO YOURSELF (from your last plans, oldest first):\n" + "\n".join(
             f"  {t:.0f}s: {n}" for t, n in start.notes[-NOTES_SHOWN:])
     if previous is not None:
-        msg += "\n\nYOUR CURRENT PLAN:\n" + previous.model_dump_json(indent=None, exclude_defaults=True,
+        age = f" (in force for {state.t - state.plan_since:.0f} s" + (
+            " - units may not have moved on it yet; that is not a sign it failed)" if state.t - state.plan_since < 6 else ")"
+        ) if state.plan_since is not None and state.t >= state.plan_since else ""
+        msg += f"\n\nYOUR CURRENT PLAN{age}:\n" + previous.model_dump_json(indent=None, exclude_defaults=True,
                                                                      exclude={"note"})
         if start.town_graph is not None and not start.player_is_attacker:
             from .town_graph import approach_summary

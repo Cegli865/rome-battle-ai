@@ -16,7 +16,7 @@ group that breaks one.
 - Artillery (catapults, onagers, ballistas) is inaccurate and its shots hit everyone where they land, your own men too.
 - An artillery unit whose machines are gone (the unit list shows "0 machines - ALL DESTROYED") is harmless: there is no need to kill its crew.
 - Elephants and chariots can run amok and then trample their own side. Shooting at elephants, especially with flaming arrows or flaming ammunition, can quickly drive them into such a frenzy.
-- A unit in phalanx or schiltrom formation cannot run.
+- Phalanx and schiltrom are handled for you: units that have them stand, walk and fight in them. A unit cannot run in them, so while it carries out an order at a run (run=true) its phalanx is off, and it comes back when the unit arrives or starts fighting. An attack at a run is run up to ~40 m from the target and walked the rest, so the phalanx is formed before contact; charge_without_phalanx=true instead charges at a run all the way and fights without the phalanx - only as a deliberate choice.
 - Fatigue: running tires units, and tired or exhausted units fight worse and break and flee sooner. The "tired" / "exhausted" marks on your units show it; units recover when they rest.
 - task=withdraw takes a unit off the battlefield only if the briefing says WITHDRAWAL IS POSSIBLE. A unit with keep_range_m backs off from every enemy that comes near, for as long as it is set.
 - Units that "hide in forest" / "hide well in forest" / "hide in long grass" / "hide anywhere" (see UNIT TYPES) are invisible to the enemy while they stand still in that terrain (forest on the TERRAIN MAP). A hidden unit that moves or shoots gives itself away.

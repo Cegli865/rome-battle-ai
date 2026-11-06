@@ -249,7 +249,7 @@ są przewidywane. Serwer sprawdza każde przewidywanie 5 i 10 s później i zapi
 Model nie zarządza każdym ruchem. Ustala *zamiar* („trzymaj tę linię, atakuj wszystko w promieniu 50 m, trzymaj
 łuczników 60 m od wroga”), a wykonawca reaguje na miejscu, dwa razy na sekundę, za darmo. Model jest pytany
 ponownie dopiero wtedy, gdy coś się naprawdę zmieni: straty, ucieczka oddziału, duży ruch albo wróg bliżej niż
-200 m. Jedna sesja modelu trwa całą bitwę, więc długi opis pola bitwy jest wysyłany tylko raz.
+200 m. Długi opis pola bitwy jest stałym promptem systemowym, więc przy każdym planie idzie z cache'u.
 
 ### Od współrzędnych do grafów: bitwy polowe a oblężenia
 

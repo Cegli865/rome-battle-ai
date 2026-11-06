@@ -125,6 +125,8 @@ class State(BaseModel):
     # Filled in by the server: course of each moving enemy unit (m/s east, m/s north) over the last TREND_WINDOW
     # seconds, recent seconds weighted more; the predictions use it where the unit's order is not known.
     trend: dict[int, tuple[float, float]] = Field(default_factory=dict, exclude=True)
+    # Filled in by the server: battle time at which the current plan started to be carried out.
+    plan_since: float | None = Field(default=None, exclude=True)
     # Filled in by the server: the plan's conditional orders, fired and waiting (lines for the report).
     reflex_status: list[str] = Field(default_factory=list, exclude=True)
     # Filled in by the server: remaining waypoints of our units (from the executor), for the predictions.

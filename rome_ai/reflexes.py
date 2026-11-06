@@ -208,7 +208,8 @@ class ReflexEngine:
             if foe is None:
                 return g
             upd.update(task="attack", target_unit=foe.id, attack_from=o.attack_from or "front", run=o.run,
-                       melee=o.melee, positions=None, path=None, waypoints=None)
+                       melee=o.melee, charge_without_phalanx=o.charge_without_phalanx,
+                       positions=None, path=None, waypoints=None)
         elif o.type == "move" and o.target_point:
             upd.update(task="move", target_point=o.target_point, facing_deg=o.facing_deg, run=o.run,
                        positions=None, path=None, waypoints=None)

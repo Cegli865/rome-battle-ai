@@ -249,8 +249,7 @@ not predicted. The server checks every prediction 5 and 10 s later and logs how 
 
 The model does not micro-manage. It sets the *intent* ("hold this line, attack anything within 50 m, keep the
 archers 60 m from the enemy") and the executor reacts locally, twice a second, for free. The model is only asked
-again when something actually changes: losses, a unit routing, a large move, or enemies within 200 m. One model
-session lasts the whole battle, so the long briefing is sent once.
+again when something actually changes: losses, a unit routing, a large move, or enemies within 200 m. The long briefing is a fixed system prompt, so it comes from the prompt cache on every plan.
 
 ### From coordinates to graphs: field battles vs. sieges
 

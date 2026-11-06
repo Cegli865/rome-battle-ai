@@ -33,6 +33,13 @@ TOGGLE_FORMATIONS = {"phalanx": 2, "testudo": 1}
 # and a unit found with it on gets it switched off. Set True to bring it back (and undo the prompt changes).
 TESTUDO_ENABLED = False
 TESTUDO = 1  # its special ability type
+# Phalanx and schiltrom are run by the executor, not by the general: on whenever the unit stands, walks or fights,
+# off only while it carries out an order at a run (a unit cannot run in them). An attack at a run is run until
+# PHALANX_REFORM_M from the target and walked the rest, so the phalanx is formed again before contact.
+WALK_ONLY = (2, 17)  # their special ability types
+PHALANX_REFORM_M = 40.0  # attack at a run: walk (and form the phalanx) from this close to the target
+PHALANX_RUN_AGAIN_M = 60.0  # ... and run again (dropping it) only if the target gets this far away
+PHALANX_TOGGLE_S = 3.0  # s between two toggles of one unit (the state comes back every 0.5 s)
 ARTILLERY_RANGE_M = 300.0
 FRIENDLY_FIRE_M = 30.0  # a target whose line of fire passes this close to our own siege equipment is not shot at
 FLANK_STANDOFF_M = 45.0  # attack_from: point this far from the target on the chosen side, reached before charging
@@ -47,6 +54,7 @@ class Executor:
     def __init__(self, start: BattleStart) -> None:
         self.start = start
         self.last: dict[int, tuple[tuple, float]] = {}  # unit -> (order key, time sent)
+        self.resend_at: dict[int, float] = {}  # unit -> battle time to re-send its order (after dropping a phalanx)
         self.modes: dict[tuple[int, str], bool] = {}  # (unit, mode) -> on
         self.skirmish_auto_off: set[int] = set()  # units whose skirmish mode we switched off for a melee attack
         self.formations: dict[int, str] = {}  # unit -> formation last ordered
@@ -93,10 +101,15 @@ class Executor:
             if not units:
                 continue
             for u in units:
+                if u.id in self.resend_at and state.t >= self.resend_at[u.id]:
+                    del self.resend_at[u.id]
+                    self.last.pop(u.id, None)  # the phalanx is off now: the same order again, this time at a run
                 out += self._modes(u, g, state.t)
                 near = g.ability_enemy_within_m is None or any(
                     dist(u, f) < g.ability_enemy_within_m for f in self.foes)
-                if not TESTUDO_ENABLED and u.ability == TESTUDO:
+                if u.ability in WALK_ONLY:
+                    pass  # phalanx / schiltrom: set below from the order the unit gets (_phalanx)
+                elif not TESTUDO_ENABLED and u.ability == TESTUDO:
                     if u.ability_on and state.t - self.ability_sent.get(u.id, -1e9) > RESEND_AFTER:
                         self.ability_sent[u.id] = state.t
                         out.append(SpecialAbility(unit=u.id))  # switch it off
@@ -121,12 +134,43 @@ class Executor:
             }[g.task](g, units, by_id)
             for u in units:
                 o = self._reflexes(u, g, orders.get(u.id))
+                if u.ability in WALK_ONLY:
+                    o, toggle = self._phalanx(u, g, o, by_id, state.t)
+                    out += toggle
                 orders[u.id] = o
             for u in units:
                 o = orders.get(u.id)
                 if o is not None and self._changed(u, o, state.t):
                     out.append(o)
         return out
+
+    def _phalanx(self, u: Unit, g: GroupOrder, o: Order | None, by_id, now: float
+                 ) -> tuple[Order | None, list[Order]]:
+        """Phalanx / schiltrom by the order: off while running, on otherwise. An attack at a run turns into a walk
+        near the target, unless the general chose charge_without_phalanx (then it stays off for the whole attack).
+        Returns the (maybe changed) order and the toggle to send, if any."""
+        run = isinstance(o, (Move, Attack, AttackBuilding)) and o.run
+        if g.task == "attack" and g.charge_without_phalanx:
+            run = True  # his choice: no phalanx for this attack, the charge and the melee
+        elif u.action == "melee":
+            run = False
+        elif isinstance(o, Attack) and o.run and o.target in by_id:
+            d = dist(u, by_id[o.target])
+            if d <= PHALANX_REFORM_M or (u.ability_on and d <= PHALANX_RUN_AGAIN_M):
+                o, run = o.model_copy(update={"run": False}), False
+        elif isinstance(o, Move) and math.hypot(u.x - o.x, u.y - o.y) <= ARRIVED_M:
+            run = False  # there: form up again
+        elif o is None:
+            run = u.action == "running"  # no order of ours now: it keeps what it is doing
+        want_on = not run
+        if want_on == u.ability_on or now - self.ability_sent.get(u.id, -1e9) < PHALANX_TOGGLE_S:
+            return o, []
+        if want_on and not u.ability_ready:
+            return o, []
+        self.ability_sent[u.id] = now
+        if not want_on:
+            self.resend_at[u.id] = now + 1.0  # once it is off, the same order again so the unit runs
+        return o, [SpecialAbility(unit=u.id)]
 
     # --- tasks ----------------------------------------------------------------
 
@@ -397,7 +441,7 @@ class Executor:
             if not u.ability_on and u.ability_ready and now - self.ability_sent.get(u.id, -1e9) > RESEND_AFTER:
                 self.ability_sent[u.id] = now
                 out.append(SpecialAbility(unit=u.id))
-        elif g.formation and u.ability in TOGGLE_FORMATIONS.values() and u.ability_on:
+        elif g.formation and u.ability == TESTUDO and u.ability_on:
             # another formation wanted: switch the phalanx / testudo off first
             if now - self.ability_sent.get(u.id, -1e9) > RESEND_AFTER:
                 self.ability_sent[u.id] = now

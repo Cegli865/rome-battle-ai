@@ -74,8 +74,9 @@ class ReflexOrder(BaseModel):
     attack_from: Literal["front", "left", "right", "rear"] | None = None
     run: bool = True
     melee: bool = Field(default=False, description="attack: missile units charge hand to hand")
+    charge_without_phalanx: bool = Field(default=False, description="attack, phalanx / schiltrom units: charge at a run all the way and fight without the phalanx (a deliberate choice; by default they walk the last metres and fight in it)")
     on: bool | None = Field(default=None, description="ability / rally")
-    formation: Literal["square", "horde", "wedge", "phalanx", "schiltrom", "shield_wall"] | None = None
+    formation: Literal["square", "horde", "wedge", "shield_wall"] | None = None
 
 
 class Reflex(BaseModel):
@@ -156,10 +157,11 @@ class GroupOrder(BaseModel):
                                                                          "tower or wall section (e.g. 'G1', 'T5w', "
                                                                          "'W27')")
     run: bool = False
-    formation: Literal["square", "horde", "wedge", "phalanx", "schiltrom", "shield_wall"] | None = Field(
-        default=None, description="Game formation to adopt; only works if the unit type supports it (e.g. phalanx "
-                                  "for hoplites/pikemen)"
+    formation: Literal["square", "horde", "wedge", "shield_wall"] | None = Field(
+        default=None, description="Game formation to adopt; only works if the unit type supports it (phalanx and "
+                                  "schiltrom are not set here: the executor handles them)"
     )
+    charge_without_phalanx: bool = Field(default=False, description="attack, phalanx / schiltrom units: charge at a run all the way and fight without the phalanx (a deliberate choice; by default they walk the last metres and fight in it)")
     melee: bool = Field(default=False, description="attack: missile units (archers, skirmishers, horse archers) charge "
                                                    "the target in hand-to-hand combat instead of shooting at it")
     fire_at_will: bool | None = Field(default=None, description="Missile units: shoot at will (true) or only on order")
