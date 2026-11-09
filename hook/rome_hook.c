@@ -42,6 +42,7 @@
 
 static FILE *g_log;
 static char g_dir[PATH_MAX]; /* directory of this .so */
+static char g_exe[PATH_MAX]; /* the game executable this hook is loaded into */
 
 static void net_log(const char *msg);
 
@@ -1333,6 +1334,21 @@ static void split_orders_into_queue(const char *line) {
     }
 }
 
+/* The hello line: protocol version and the game's executable, JSON-escaped (the server finds the game's data
+ * files next to it, wherever the game is installed). */
+static char *hello_line(void) {
+    char esc[PATH_MAX * 2], *o = esc;
+    for (const char *p = g_exe; *p && o < esc + sizeof esc - 2; p++) {
+        if (*p == '"' || *p == '\\') *o++ = '\\';
+        *o++ = *p;
+    }
+    *o = 0;
+    size_t cap = strlen(esc) + 128;
+    char *s = malloc(cap);
+    if (s) snprintf(s, cap, "{\"type\":\"hello\",\"version\":1,\"game\":\"rome-remastered\",\"exe\":\"%s\"}\n", esc);
+    return s;
+}
+
 static void *net_thread(void *arg) {
     (void)arg;
     int port = getenv("ROME_AI_PORT") ? atoi(getenv("ROME_AI_PORT")) : 7777;
@@ -1350,8 +1366,9 @@ static void *net_thread(void *arg) {
         fcntl(fd, F_SETFL, O_NONBLOCK);
         logf_("connected to AI server on port %d", port);
         g_connected = true;
-        const char *hello = "{\"type\":\"hello\",\"version\":1,\"game\":\"rome-remastered\"}\n";
-        send(fd, hello, strlen(hello), MSG_NOSIGNAL);
+        char *hello = hello_line();
+        if (hello) send(fd, hello, strlen(hello), MSG_NOSIGNAL);
+        free(hello);
         if (g_in_battle) {
             send_line("{\"type\":\"battle_start\",\"ai_alliance\":%d}\n", g_ai_alliance);
             g_terrain_pending = true;
@@ -1454,6 +1471,7 @@ __attribute__((constructor)) static void rome_hook_init(void) {
     exe[n] = 0;
     size_t el = strlen(exe);
     if (el < 9 || strcmp(exe + el - 9, "/bin/Rome") != 0) return; /* CEF helpers, launcher tools, ... */
+    snprintf(g_exe, sizeof g_exe, "%s", exe);
 
     Dl_info di;
     if (getenv("ROME_AI_DIR")) {

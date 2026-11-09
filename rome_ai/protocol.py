@@ -78,6 +78,7 @@ class Hello(BaseModel):
     type: Literal["hello"] = "hello"
     version: int = PROTOCOL_VERSION
     game: str = "rome-remastered"
+    exe: str | None = None  # the game's executable (the server finds the game's data files next to it)
 
 
 class BattleStart(BaseModel):

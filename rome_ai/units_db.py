@@ -12,8 +12,30 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
+# The game's data folder: ROME_DATA if set, else found from the game's executable the hook reports (use_game_exe),
+# else the default Steam folder until the hook connects.
 GAME_DATA = Path(os.environ.get(
     "ROME_DATA", Path.home() / ".steam/debian-installation/steamapps/common/Total War ROME REMASTERED/share/data"))
+
+
+def use_game_exe(exe: str) -> None:
+    """Take the game's data from wherever this game is installed: the folder near its executable that holds
+    data/export_descr_unit.txt (Linux: <install>/share/data next to bin/Rome)."""
+    global GAME_DATA
+    if os.environ.get("ROME_DATA") or not exe:
+        return
+    start = Path(exe.replace("\\", "/")).parent
+    for d in [start, *list(start.parents)[:2]]:
+        for cand in (d, d / "share" / "data"):
+            if (cand / EDU_FILES[0]).is_file():
+                if cand != GAME_DATA:
+                    log.info("game data: %s (from the game at %s)", cand, exe)
+                    GAME_DATA = cand
+                    database.cache_clear()
+                return
+    log.warning("no %s found near the game at %s - set ROME_DATA to the game's data folder", EDU_FILES[0], exe)
+
+
 # Rome first, then the expansions; the first definition of a type name wins
 EDU_FILES = ["data/export_descr_unit.txt", "bi/data/export_descr_unit.txt", "alexander/data/export_descr_unit.txt"]
 

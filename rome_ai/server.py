@@ -473,7 +473,11 @@ def make_handler(general: General, plan_interval: float):
                     log.warning("bad message %r: %s", line[:200], e)
                     continue
                 if isinstance(msg, Hello):
-                    log.info("hello: %s v%d", msg.game, msg.version)
+                    log.info("hello: %s v%d%s", msg.game, msg.version, f", game at {msg.exe}" if msg.exe else "")
+                    if msg.exe:
+                        from .units_db import use_game_exe
+
+                        use_game_exe(msg.exe)
                 elif isinstance(msg, BattleStart):
                     session.on_battle_start(msg)
                     writer.write(dump(Control(take=True)))  # hand our alliance from the game AI to us
