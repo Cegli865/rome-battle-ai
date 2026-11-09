@@ -223,8 +223,10 @@ The hook takes no tactical decisions. It is only the bridge to the game.
   - `engage_within_m`: attack any enemy that comes near, then return to position;
   - `on_target_lost`: pick the nearest enemy when the target dies or routs;
   - `attack_from`: go round to the target's flank or rear before charging;
-  - `melee`: missile units (horse archers, skirmishers) charge hand to hand instead of shooting - their
-    skirmish mode is switched off for the charge and back on afterwards;
+  - `attack_type`: every attack is either `shoot` (from a distance) or `melee` (charge and fight hand to hand),
+    chosen by the commander for any unit - archers, horse archers and elephants with archers on board too.
+    Missile units charging hand to hand get their skirmish mode switched off for the charge and back on
+    afterwards; `fire_at_will` is set separately, so e.g. an elephant's archers can keep shooting while it charges;
   - abilities at the right moment (e.g. a warcry only when the enemy is within 40 m);
   - safety guards (artillery never fires over its own siege equipment, attacks on own or absent units are
     redirected);

@@ -6,9 +6,18 @@ routes; the executor only turns these parameters into per-unit game orders.
 
 from __future__ import annotations
 
+import logging
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+log = logging.getLogger(__name__)
+
+
+def _require_attack_type(schema: dict) -> None:
+    """attack_type is required in the schema the model answers with (null when not an attack), so the general
+    always decides it; when parsing, a missing one only falls back (see _attack_type_given)."""
+    schema.setdefault("required", []).append("attack_type")
 
 Task = Literal[
     "move",  # go to target_point (via waypoints / a path of town graph nodes) and stand there in the given shape
@@ -67,16 +76,27 @@ class Event(BaseModel):
 
 
 class ReflexOrder(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_require_attack_type)
+
     type: ReflexOrderType
     target_point: list[float] | None = Field(default=None, description="move: [x, y]")
     facing_deg: float | None = Field(default=None, description="move: front direction on arrival")
     distance_m: float | None = Field(default=None, description="fall_back (default 60)")
     attack_from: Literal["front", "left", "right", "rear"] | None = None
     run: bool = True
-    melee: bool = Field(default=False, description="attack: missile units charge hand to hand")
+    attack_type: Literal["shoot", "melee"] | None = Field(default=None, description="attack (required): shoot = shoot at the target from a distance (missile units); melee = charge it and "
+                                  "fight hand to hand (any unit - also archers, horse archers, elephants with archers on "
+                                  "board). Independent of fire_at_will")
     charge_without_phalanx: bool = Field(default=False, description="attack, phalanx / schiltrom units: charge at a run all the way and fight without the phalanx (a deliberate choice; by default they walk the last metres and fight in it)")
     on: bool | None = Field(default=None, description="ability / rally")
     formation: Literal["square", "horde", "wedge", "shield_wall"] | None = None
+
+    @model_validator(mode="after")
+    def _attack_type_given(self):
+        if self.type == "attack" and self.attack_type is None:  # required, but a missing one must not lose the plan
+            log.warning("reflex attack without attack_type: shooting if it can, else hand to hand")
+            self.attack_type = "shoot"
+        return self
 
 
 class Reflex(BaseModel):
@@ -105,6 +125,8 @@ class UnitGroup(BaseModel):
 
 
 class GroupOrder(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_require_attack_type)
+
     name: str = Field(description="Short label, e.g. 'left cavalry'")
     unit_ids: list[int] = Field(description="Units of the group. shape=line: west to east if the front faces "
                                             "north or south, north to south if it faces east or west (map "
@@ -162,9 +184,13 @@ class GroupOrder(BaseModel):
                                   "schiltrom are not set here: the executor handles them)"
     )
     charge_without_phalanx: bool = Field(default=False, description="attack, phalanx / schiltrom units: charge at a run all the way and fight without the phalanx (a deliberate choice; by default they walk the last metres and fight in it)")
-    melee: bool = Field(default=False, description="attack: missile units (archers, skirmishers, horse archers) charge "
-                                                   "the target in hand-to-hand combat instead of shooting at it")
-    fire_at_will: bool | None = Field(default=None, description="Missile units: shoot at will (true) or only on order")
+    attack_type: Literal["shoot", "melee"] | None = Field(default=None, description="attack (required): shoot = shoot at the target from a distance (missile units); melee = charge it and "
+                                  "fight hand to hand (any unit - also archers, horse archers, elephants with archers on "
+                                  "board). Independent of fire_at_will")
+    fire_at_will: bool | None = Field(default=None, description="Missile units (also archers on elephants, horse "
+                                                                "archers): shoot by themselves at enemies in range "
+                                                                "(true) or only at an ordered target (false) - also "
+                                                                "while the unit charges with attack_type=melee")
     skirmish: bool | None = Field(default=None, description="Missile units: skirmish mode (the game keeps them out of melee)")
     use_ability: bool | None = Field(
         default=None, description="true: units of the group switch on / use their special ability (warcry, druid "
@@ -191,6 +217,13 @@ class GroupOrder(BaseModel):
                                   "switches to the order at once (e.g. charge the enemy that reaches the bridge "
                                   "exit, fall back when cavalry comes within 80 m)")
 
+
+    @model_validator(mode="after")
+    def _attack_type_given(self):
+        if self.task == "attack" and self.attack_type is None:  # required, but a missing one must not lose the plan
+            log.warning("group %r: attack without attack_type: shooting if it can, else hand to hand", self.name)
+            self.attack_type = "shoot"
+        return self
 
 class RouteRequest(BaseModel):
     from_node: str = Field(description="TOWN GRAPH node to start from: a gate G.., a breach W.. or any street node")

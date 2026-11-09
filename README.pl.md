@@ -222,8 +222,10 @@ Hook nie podejmuje decyzji taktycznych. Jest tylko mostem do gry.
   - `engage_within_m`: atak na każdego wroga, który podejdzie, potem powrót na miejsce;
   - `on_target_lost`: atak na najbliższego wroga, gdy cel zginie albo ucieknie;
   - `attack_from`: obejście celu z boku albo od tyłu przed szarżą;
-  - `melee`: oddziały strzelające (konni łucznicy, harcownicy) szarżują wręcz zamiast strzelać - na czas
-    szarży wykonawca wyłącza im tryb harcowania, a potem włącza go z powrotem;
+  - `attack_type`: każdy atak to `shoot` (ostrzał z dystansu) albo `melee` (szarża i walka wręcz) - dowódca
+    wybiera to dla każdego oddziału, także łuczników, konnych łuczników i słoni ze strzelcami na grzbiecie.
+    Oddziałom strzelającym, które idą wręcz, wykonawca na czas szarży wyłącza tryb harcowania, a potem włącza
+    go z powrotem; `fire_at_will` ustawia się osobno, więc np. strzelcy na słoniu mogą strzelać w trakcie szarży;
   - umiejętności we właściwym momencie (np. okrzyk bojowy dopiero, gdy wróg jest 40 m od oddziału);
   - zabezpieczenia (artyleria nigdy nie strzela nad własnym sprzętem oblężniczym, a ataki na własne albo
     nieobecne oddziały są przekierowywane);

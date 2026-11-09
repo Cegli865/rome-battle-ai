@@ -58,9 +58,11 @@ Tasks (one per group):
   centre to centre (gap 2-5 m), a second line about 30-50 m behind the first.
 - attack: every unit of the group attacks target_unit. A unit gets the charge bonus only when it runs into the \
   enemy (run=true for the last stretch); changing the target of a unit that is already charging cancels the \
-  charge, so keep targets steady once units are on their way. Missile units given an attack shoot at the target \
-  while they have ammunition; with melee=true they charge it hand to hand instead (e.g. horse archers hitting a \
-  unit that is already fighting in its flank or rear).
+  charge, so keep targets steady once units are on their way. Every attack says how (attack_type, required): \
+  shoot = shoot at the target from a distance (missile units), melee = charge it and fight hand to hand (any \
+  unit: infantry and cavalry, but also archers, horse archers hitting a unit already fighting in its flank or \
+  rear, and elephants with archers on board). fire_at_will is separate: with it on, the missile men of a unit \
+  also shoot by themselves at enemies in range, e.g. the archers of an elephant charging with attack_type=melee.
 - attack_building: every unit attacks target_building = a town graph node (gate G.., tower T..w, wall section W..; \
   artillery bombards it, a unit carrying a RAM batters a gate, LADDERS / a SIEGE TOWER go onto a wall section).
 - halt: stop where they are.
@@ -108,7 +110,7 @@ reflex to charge it as soon as it engages.
   town graph node, or "x,y,r"; at_least), morale_below (value 0..1), arrived (this group reached its place), \
   after (seconds since this plan), out_of_ammo, predicted_contact (an enemy of enemy_target is predicted to \
   reach an ally of ally_target within seconds).
-- order: attack (the enemy that set the event off; attack_from, run, melee), move (target_point, facing_deg), \
+- order: attack (the enemy that set the event off; attack_type required, attack_from, run), move (target_point, facing_deg), \
   fall_back (distance_m from that enemy), hold, withdraw, ability (on), rally (on), formation.
 Examples: spearmen at a bridge {"event": {"type": "in_zone", "zone": "C1", "at_least": 2}, "order": {"type": \
 "attack"}}; archers {"enemy_target": {"kind": "groups", "groups": ["enemy cavalry"]}, "event": {"type": \
@@ -647,25 +649,25 @@ class RuleGeneral:
         inf = [u for u in mine if u.category in ("infantry", "general")]
         if inf:
             tgt = nearest(_proxy(centroid(inf), inf[0]), foe_main)
-            groups.append(GroupOrder(lookahead=NO_LOOKAHEAD, name="infantry", unit_ids=[u.id for u in inf], task="attack", target_unit=tgt.id))
+            groups.append(GroupOrder(lookahead=NO_LOOKAHEAD, name="infantry", unit_ids=[u.id for u in inf], task="attack", target_unit=tgt.id, attack_type="melee"))
         cav = [u for u in mine if u.category == "cavalry"]
         if cav:
             prey = min(foe_missiles or foe_main, key=lambda f: min(dist(c, f) for c in cav))
             cx, cy = centroid(cav)
             side = 1 if cx >= prey.x else -1  # go round on the side the cavalry already is
-            groups.append(GroupOrder(lookahead=NO_LOOKAHEAD, name="horse", unit_ids=[c.id for c in cav], task="move", run=True,
+            groups.append(GroupOrder(lookahead=NO_LOOKAHEAD, name="horse", unit_ids=[c.id for c in cav], task="move", run=True, attack_type=None,
                                      waypoints=[[prey.x + side * 200, prey.y]], target_point=[prey.x, prey.y]))
             if min(dist(c, prey) for c in cav) < 120:
                 groups[-1] = GroupOrder(lookahead=NO_LOOKAHEAD, name="horse", unit_ids=[c.id for c in cav], task="attack", target_unit=prey.id,
-                                        run=True, attack_from="rear")
+                                        run=True, attack_from="rear", attack_type="melee")
         miss = [u for u in mine if u.category == "missile"]
         if miss:
             tgt = nearest(_proxy(centroid(miss), miss[0]), foes)
             groups.append(GroupOrder(lookahead=NO_LOOKAHEAD, name="archers", unit_ids=[u.id for u in miss], task="attack", target_unit=tgt.id,
-                                     fire_at_will=True, skirmish=True, keep_range_m=60))
+                                     attack_type="shoot", fire_at_will=True, skirmish=True, keep_range_m=60))
         rest = [u for u in mine if u.category in ("siege", "other")]
         if rest:
-            groups.append(GroupOrder(lookahead=NO_LOOKAHEAD, name="rest", unit_ids=[u.id for u in rest], task="halt"))
+            groups.append(GroupOrder(lookahead=NO_LOOKAHEAD, name="rest", unit_ids=[u.id for u in rest], task="halt", attack_type=None))
         return Plan(intent="pin them with the infantry, cavalry round the flank", note="", groups=groups)
 
 

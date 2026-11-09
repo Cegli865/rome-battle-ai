@@ -212,7 +212,7 @@ class Executor:
                         out[u.id] = Halt(unit=u.id)
                     continue
                 t = min(clear, key=lambda f: dist(u, f))
-            out[u.id] = Attack(unit=u.id, target=t.id, run=g.run, melee=g.melee)
+            out[u.id] = Attack(unit=u.id, target=t.id, run=g.run, melee=g.attack_type == "melee")
         return out
 
     def _fires_over_own_equipment(self, u: Unit, t: Unit) -> bool:
@@ -247,8 +247,9 @@ class Executor:
     def _reflexes(self, u: Unit, g: GroupOrder, o: Order | None) -> Order | None:
         # surrounded: no side to back away to - backing off from whichever enemy is nearest would only turn the
         # unit back and forth on the spot, so it carries on with its task
-        # a melee attack (a unit without missiles, or melee=true) has to reach the enemy: backing off would cancel it
-        charging = g.task == "attack" and (g.melee or u.ammo is None)
+        # a melee attack (a unit without missiles, or attack_type=melee) has to reach the enemy: backing off would
+        # cancel it
+        charging = g.task == "attack" and (g.attack_type == "melee" or u.ammo is None)
         if g.keep_range_m and self.foes and not charging and not surrounded(u, self.foes, g.keep_range_m):
             e = min(self.foes, key=lambda f: dist(u, f))
             d = dist(u, e)
@@ -260,7 +261,7 @@ class Executor:
             home = self.slots.get(u.id) or self.homes.setdefault(u.id, (u.x, u.y))
             e = min(self.foes, key=lambda f: math.hypot(f.x - home[0], f.y - home[1]))
             if math.hypot(e.x - home[0], e.y - home[1]) < g.engage_within_m:
-                return Attack(unit=u.id, target=e.id, run=True, melee=g.melee)
+                return Attack(unit=u.id, target=e.id, run=True, melee=g.attack_type == "melee")
             if g.task == "halt" and math.hypot(u.x - home[0], u.y - home[1]) > 15:
                 return Move(unit=u.id, x=home[0], y=home[1], run=False)  # back to its place after a fight
         return o
@@ -452,7 +453,7 @@ class Executor:
         skirmish = g.skirmish
         if skirmish is not None:  # the general decides himself
             self.skirmish_auto_off.discard(u.id)
-        elif g.task == "attack" and g.melee and u.ammo is not None:  # only missile units have a skirmish mode
+        elif g.task == "attack" and g.attack_type == "melee" and u.ammo is not None:  # only missile units have a skirmish mode
             skirmish = False  # skirmish mode makes the unit back off from the very melee it was sent into
             self.skirmish_auto_off.add(u.id)
         elif u.id in self.skirmish_auto_off:
