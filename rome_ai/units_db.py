@@ -20,13 +20,15 @@ GAME_DATA = Path(os.environ.get(
 
 def use_game_exe(exe: str) -> None:
     """Take the game's data from wherever this game is installed: the folder near its executable that holds
-    data/export_descr_unit.txt (Linux: <install>/share/data next to bin/Rome)."""
+    data/export_descr_unit.txt (Linux: <install>/share/data next to bin/Rome; Windows: <install>/Contents/Resources/Data next to the exe)."""
     global GAME_DATA
     if os.environ.get("ROME_DATA") or not exe:
         return
+    if os.name != "nt" and exe[1:3] == ":\\" and exe[0] in "Zz":
+        exe = exe[2:]  # the Windows game under Proton/Wine: drive Z: is the Linux root
     start = Path(exe.replace("\\", "/")).parent
     for d in [start, *list(start.parents)[:2]]:
-        for cand in (d, d / "share" / "data"):
+        for cand in (d, d / "share" / "data", d / "Contents" / "Resources" / "Data"):  # Linux / Windows build
             if (cand / EDU_FILES[0]).is_file():
                 if cand != GAME_DATA:
                     log.info("game data: %s (from the game at %s)", cand, exe)

@@ -11,7 +11,7 @@ skinparam rectangle {
 
 rectangle "Total War: ROME REMASTERED (game process)" as game #FDF6E3 {
   rectangle "Game engine\nbattle loop, units, orders,\nstreets, walls, bridges, fords" as engine #FFFFFF
-  rectangle "Hook (librome_ai.so)\nloaded with LD_PRELOAD" as hook #FFE8C2
+  rectangle "Hook\nLinux: librome_ai.so (LD_PRELOAD)\nWindows: dinput8.dll" as hook #FFE8C2
 }
 
 rectangle "Python server (rome_ai)" as server #EAF2FB {

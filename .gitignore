@@ -9,6 +9,9 @@ hook/*.so.tmp
 hook/hook.log
 hook/probe/
 hook/PROBE
+hook-windows/*.dll
+hook-windows/*.dll.tmp
+hook-windows/probe/
 
 # battle logs (local, can be attached to issues)
 logs/

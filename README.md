@@ -69,7 +69,9 @@ This is **work in progress**. It changes from day to day, and plenty of things a
   river itself runs** (only the crossings), so for example he cannot line his troops up along the bank, and only
   a few river battles have been played.
 - **Not yet tested:** battles at **forts**. They may work, they may not.
-- **Linux only for now.** It needs the native Linux version of the game. A **Windows** version is in progress.
+- **Linux and Windows.** Linux (the native Linux version of the game) is the main, best tested platform. The
+  **Windows** version is new: so far it has only been tested with the Windows version of the game running under
+  Proton on Linux, not yet on a real Windows PC - reports are very welcome.
 - **One exact game version.** See below. On any other version the mod switches itself off and the game runs
   normally with its own AI.
 - The AI is only as good as the model behind it, and each plan takes a few seconds. Sometimes it will make odd
@@ -81,11 +83,11 @@ This is **work in progress**. It changes from day to day, and plenty of things a
 
 | | |
 |---|---|
-| **Game** | *Total War: ROME REMASTERED*, **native Linux version, 2.0.5** (Steam public branch, build 8081527). Other versions are not supported: the hook checks the game binary and disables itself if it does not match. |
-| **System** | Linux, Python **3.12+** (`gcc` and `make` only to build the hook from source) |
+| **Game** | *Total War: ROME REMASTERED* **2.0.5** (Steam public branch, build 8081527): the **native Linux version**, or the **Windows version** (`Total War ROME REMASTERED.exe`, SHA-256 `09ef4354...e70a`). Other versions are not supported: the hook checks the game binary and disables itself if it does not match. |
+| **System** | Linux or Windows, Python **3.12+**. Only to build the hook from source: `gcc` and `make` (Linux), MinGW-w64 (the Windows DLL, cross-compiled on Linux) |
 | **A model** | one of: a **Claude** subscription with [Claude Code](https://claude.com/claude-code) installed (default, the best tested); an **Anthropic API** key; any **OpenAI-compatible** API (OpenAI, OpenRouter, a local model in Ollama / LM Studio...); **DeepSeek**. Only Claude has been tested in real battles so far; the others are experimental. |
 
-### Install
+### Install on Linux
 
 **Step 1 - get the mod.** Pick one:
 
@@ -119,9 +121,34 @@ paste the full path to `launch.sh` followed by `%command%`, e.g.:
 `launch.sh` loads the mod **only when the AI server is running** (see *Play* below). Without it, the game starts
 exactly as usual. No game file is ever modified.
 
+### Install on Windows
+
+The Windows version of the hook is a `dinput8.dll` that the game loads from its own folder.
+
+**Step 1 - get the mod.** Download or clone the repository as above (into e.g. `C:\rome-battle-ai`) and get
+`dinput8.dll` from **Releases**, or build it yourself on Linux with MinGW-w64: `make -C hook-windows`.
+
+**Step 2 - install the Python part** (once), in PowerShell or the command prompt:
+
+```powershell
+cd C:\rome-battle-ai
+py -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+```
+
+**Step 3 - put the hook next to the game.** In Steam: **ROME REMASTERED → Manage → Browse local files**, and copy
+`dinput8.dll` into that folder, next to `Total War ROME REMASTERED.exe`. No launch options are needed. The hook
+takes the AI's army only while the AI server is running; without it the game plays as usual.
+
+**The Windows version under Proton on Linux** works too: in Steam, **Properties → Compatibility**, force a Proton
+version; put `dinput8.dll` into the game folder; set the launch options to `WINEDLLOVERRIDES="dinput8=n,b" %command%`
+(otherwise Proton uses its own `dinput8`); and run the Linux server as described below. Some Proton versions
+load town battles very slowly or not at all - that happens without the mod too; another Proton version helps.
+
 ### Play
 
-1. Start the AI server **before** the battle, in a terminal (leave it open while you play):
+1. Start the AI server **before** the battle, in a terminal (leave it open while you play). On Windows use
+   `.venv\Scripts\python` instead of `.venv/bin/python` in the commands below:
 
    ```bash
    cd ~/rome-battle-ai
@@ -156,23 +183,28 @@ exactly as usual. No game file is ever modified.
    in the main menu) the server console prints
 
    ```
-   INFO hello: rome-remastered v1
+   INFO hello: rome-remastered v1, game at ...
    ```
 
-   No such line? The mod is not loaded - check the Steam launch options and that the server was running first.
+   followed by `game data: ...` (the folder the unit types are read from). No `hello` line? The mod is not
+   loaded - on Linux check the Steam launch options and that the server was running first, on Windows that
+   `dinput8.dll` is next to the game's exe. If the server cannot find the game's data, it says so: set
+   `ROME_DATA` to the folder that holds `data/export_descr_unit.txt`.
 
    Now fight a battle (custom battle or campaign). The **computer's side** is commanded by the model. If the
    server stops or the model stops answering, the army goes back to the game's own AI.
 
 3. Every battle is logged to `logs/battle-*.jsonl`: what the general saw and what it decided. The mod's own log
-   (connection, taking control, orders carried out) is usually `~/.local/share/rome-ai/hook.log` - Steam runs the
-   game in a container that cannot write into the mod folder (otherwise it is `hook/hook.log`).
+   (connection, taking control, orders carried out) is usually `~/.local/share/rome-ai/hook.log` on Linux - Steam
+   runs the game in a container that cannot write into the mod folder (otherwise it is `hook/hook.log`) - and
+   `rome_ai_hook.log` next to `dinput8.dll` on Windows (or `%LOCALAPPDATA%\rome-ai\`).
 
 4. When you are done, stop the server with **Ctrl+C**. The next time you start the game without the server,
    it runs exactly as usual.
 
-**To uninstall:** remove the text from the Steam launch options and delete the `rome-battle-ai` folder (and
-`~/.local/share/rome-ai`). Nothing else on your system or in the game was changed.
+**To uninstall:** on Linux remove the text from the Steam launch options, on Windows delete `dinput8.dll` (and
+`rome_ai_hook.log`) from the game folder; then delete the `rome-battle-ai` folder (and `~/.local/share/rome-ai`).
+Nothing else on your system or in the game was changed.
 
 You can teach the general your own tactics without touching code, in plain English, one point per line:
 
@@ -193,9 +225,12 @@ Both are re-read before every battle.
 The project is a small **agent harness** around a language model: an observation builder, a plan schema the
 model answers with, a loop, and an executor that turns plans into game orders.
 
-### The hook (C, `hook/`)
+### The hook (C, `hook/` and `hook-windows/`)
 
-- Loaded into the game process with `LD_PRELOAD` by `launch.sh`. No file of the game is changed on disk.
+- Linux: loaded into the game process with `LD_PRELOAD` by `launch.sh`. Windows: the game loads it as
+  `dinput8.dll` from its own folder - a proxy that passes DirectInput on to the system's real DLL. No file of the
+  game is changed on disk. The two builds share the same logic; `hook-windows/` has the Windows addresses and
+  structure layouts (the Windows game is built with another compiler, so many of them differ).
 - It replaces one pointer in memory: the game's per-tick battle update. From then on the game calls the hook on
   every tick, on the game's own main thread, and the hook calls the original function first.
 - Every 0.5 s it reads the battle from memory (units, positions, men, morale, fatigue, ammunition, formations,
@@ -300,8 +335,8 @@ go through the code by hand.
 
 Everyone is welcome:
 
-- **Pull requests** are welcome: fixes, new reflexes, better battle reports, support for more models, the
-  Windows port.
+- **Pull requests** are welcome: fixes, new reflexes, better battle reports, support for more models. Testing
+  on a real Windows PC is especially welcome.
 - **Ideas and bugs:** open an **issue**. For a strange decision in battle, attach the battle log from `logs/`
   (it records what the general saw and what it decided) and, if you can, the moment in the battle.
 - **Better tactics:** improvements to [`strategy.md`](strategy.md) (and fixes to [`rules.md`](rules.md)) are
