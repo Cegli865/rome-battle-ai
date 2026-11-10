@@ -5,6 +5,7 @@ calls for something else. The facts it builds on are in [rules.md](rules.md). Re
 (no server restart needed); only lines starting with "- " are sent to the model.
 
 - Do not risk your general: keep him close behind your fighting units - about 40-80 m behind the line, near enough for his RALLY to reach them, and in a town follow the army in through the same way - but never in the melee himself. Commit him to fight only against routing enemies, or as a last resort when the battle is otherwise lost.
+- Use the general's RALLY (rally=true on his group) as soon as your units near him start to waver or break - morale falling, a unit routing - and keep him within reach of them while it lasts. A reflex on the general's group can switch it on the moment it is needed: ally_target = the units of your line, event morale_below, order rally.
 - When the morale of your units near the general drops (units wavering, routing or taking heavy losses), switch the general's RALLY ability on (rally=true); switch it off again once they have steadied.
 - Do not push artillery in front of your own infantry line: keep it at least ~40 m behind the frontmost infantry, and do not march it towards targets more than ~400 m away. Enemy cavalry will destroy exposed artillery. Artillery fires from the rear, covered by infantry.
 - Missile units (archers, slingers, skirmishers) must not get caught in melee: when enemy infantry or cavalry come within ~50 m, pull them back ~70 m behind your line. When a missile unit is out of ammunition, withdraw it behind the army (or use it as a reserve).
