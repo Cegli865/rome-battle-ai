@@ -343,6 +343,11 @@ Everyone is welcome:
   contributions too.
 - **Please never commit files from the game itself.**
 
+## Related projects
+
+Other projects with a similar idea - an LLM commanding the computer's army in another game - are listed in
+[Related projects](docs/related-projects.md).
+
 ## License
 
 [MIT](LICENSE)

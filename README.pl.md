@@ -343,6 +343,11 @@ Każdy może dołożyć swoją cegiełkę:
 - **Lepsza taktyka:** poprawki [`strategy.md`](strategy.md) (i [`rules.md`](rules.md)) to też wkład w projekt.
 - **Nigdy nie wrzucaj plików samej gry.**
 
+## Podobne projekty
+
+Inne projekty z podobnym pomysłem - model językowy dowodzi armią komputera w innej grze - są opisane w
+[Podobne projekty](docs/related-projects.pl.md).
+
 ## Licencja
 
 [MIT](LICENSE)
