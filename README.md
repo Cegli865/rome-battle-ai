@@ -23,7 +23,7 @@ From about 380 comment threads under the video, the topics that came up most oft
 2. **Cost and local models** (~25): how much a battle costs in tokens / API, who pays, can a free or local model
    be used (Ollama, Qwen, 7-14B on the same GPU).
    *It all depends on the length of the battles. With a $20 Claude subscription and its 5-hour session limit you can
-   realistically play about 10-15 battles - that is the real figure, not a cautious one. Long battles and Opus use
+   realistically play about 6-7 battles - that is the real figure, not a cautious one. Long battles and Opus use
    the limit up faster.*
 3. **Campaign map and diplomacy** (~18): does the AI also play on the strategic map - economy, alliances, army
    movement.

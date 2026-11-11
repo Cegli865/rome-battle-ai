@@ -23,7 +23,7 @@ Z około 380 wątków komentarzy pod filmem najczęściej wracały te tematy (od
 2. **Koszt i modele lokalne** (~25): ile kosztuje bitwa w tokenach / API, kto płaci, czy da się użyć darmowego
    lub lokalnego modelu (Ollama, Qwen, 7-14B na tej samej karcie).
    *Wszystko zależy od długości bitew. Przy subskrypcji Claude za 20 $ z 5-godzinnym limitem sesji realnie da się
-   rozegrać około 10-15 bitew - to faktyczna liczba, a nie ostrożne założenie. Długie bitwy i Opus zużywają limit
+   rozegrać około 6-7 bitew - to faktyczna liczba, a nie ostrożne założenie. Długie bitwy i Opus zużywają limit
    szybciej.*
 3. **Mapa kampanii i dyplomacja** (~18): czy AI gra też na mapie strategicznej - gospodarka, sojusze, ruchy armii.
    *To też będzie w ankiecie.*
